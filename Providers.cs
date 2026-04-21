@@ -9,9 +9,8 @@ namespace McpClanker;
 
 // Compile-time dispatch over the providers nb supports. Each section in
 // ChatProviders[] has a Name that matches a case below. Mirrors nb's provider
-// code (see /home/joseph/repos/nb/Providers/) but drops the IChatClientProvider
-// interface and AssemblyLoadContext machinery — we don't need runtime plugin
-// loading.
+// code but drops the IChatClientProvider interface and AssemblyLoadContext
+// machinery — we don't need runtime plugin loading.
 public static class Providers
 {
     public static IChatClient Create(IConfiguration root)
