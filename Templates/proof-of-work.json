@@ -1,0 +1,28 @@
+{
+  "task_id": "T-042",
+  "terminal_state": "success | failure | rejected | blocked",
+  "started_at": "ISO-8601",
+  "completed_at": "ISO-8601",
+  "tool_call_count": 47,
+  "retry_count": 1,
+  "files_changed": [
+    { "path": "src/foo.ts", "action": "created", "lines_added": 38, "lines_removed": 0 }
+  ],
+  "tests": {
+    "added": ["resolverHandlesEmptyStack", "resolverStacksSameType"],
+    "modified": [],
+    "existing_passed": true
+  },
+  "acceptance": [
+    { "item": "All existing tests pass", "status": "pass" },
+    { "item": "New tests cover empty/single/stacked cases", "status": "pass" },
+    { "item": "Docs updated at CONDITIONS.md", "status": "pass" },
+    { "item": "No changes outside Scope", "status": "pass" }
+  ],
+  "sub_agents_spawned": [
+    { "role": "closeout", "verdict": "pass", "notes": "..." }
+  ],
+  "notes": "Free-text. Surprises, deviations, things the human might want to eyeball. This field carries real signal.",
+  "blocked_question": null,
+  "rejection_reason": null
+}
