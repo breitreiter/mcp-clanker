@@ -23,6 +23,12 @@ public class Program
             return;
         }
 
+        if (args.Length >= 2 && args[0] == "--build")
+        {
+            await RunBuild(args[1], args.Length > 2 ? args[2] : null);
+            return;
+        }
+
         var builder = Host.CreateApplicationBuilder(args);
 
         // Host.CreateApplicationBuilder loads appsettings.json from the current
@@ -81,6 +87,33 @@ public class Program
             foreach (var c in msg.Contents)
                 Console.Error.WriteLine($"[ping]   {msg.Role} content: {c.GetType().Name}");
         Console.WriteLine(response.Text);
+    }
+
+    // Exercises the full build() flow end-to-end from the CLI, bypassing MCP
+    // transport. Useful for iterating on Executor/Tools/Worktree without
+    // restarting the Claude Code MCP server subprocess.
+    static async Task RunBuild(string contractPath, string? providerOverride)
+    {
+        var builder = new ConfigurationBuilder()
+            .AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.json"), optional: true)
+            .AddJsonFile("appsettings.json", optional: true);
+
+        if (!string.IsNullOrEmpty(providerOverride))
+        {
+            builder.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ActiveProvider"] = providerOverride,
+            });
+        }
+
+        var config = builder.Build();
+        Console.Error.WriteLine($"[build] ActiveProvider = {config["ActiveProvider"]}");
+        Console.Error.WriteLine($"[build] contractPath = {contractPath}");
+        Console.Error.WriteLine($"[build] cwd = {Directory.GetCurrentDirectory()}");
+
+        var chat = Providers.Create(config);
+        var json = await McpTools.Build(chat, contractPath);
+        Console.WriteLine(json);
     }
 
     // Verifies multi-turn tool-calling round-trips correctly against the active

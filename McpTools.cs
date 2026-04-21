@@ -15,9 +15,63 @@ public static class McpTools
         return response.Text;
     }
 
-    [McpServerTool, Description("Run a build against a contract file. Long-running; returns proof-of-work when finished. STUB.")]
-    public static string Build(string contractPath)
-        => $"STUB Build: contractPath={contractPath}";
+    [McpServerTool, Description("Run a build against a contract file. Parses the contract, creates a git worktree on a fresh branch in the target repo (inferred from cwd), runs the executor, and returns a JSON proof-of-work.")]
+    public static async Task<string> Build(IChatClient chat, string contractPath)
+    {
+        if (!File.Exists(contractPath))
+            return BuildResultJson.Serialize(RejectBuild("T-???", null, null, $"Contract file not found: {contractPath}"));
+
+        var markdown = await File.ReadAllTextAsync(contractPath);
+        var contract = ContractParser.Parse(markdown);
+
+        var targetRepo = Directory.GetCurrentDirectory();
+        var validation = ContractValidator.Validate(contract, targetRepo);
+        if (!validation.IsValid)
+            return BuildResultJson.Serialize(RejectBuild(contract.TaskId, null, null, validation.RejectionReason!));
+
+        string worktreePath;
+        string branch;
+        try
+        {
+            (worktreePath, branch) = Worktree.Create(targetRepo, contract.TaskId);
+        }
+        catch (Exception ex)
+        {
+            return BuildResultJson.Serialize(RejectBuild(contract.TaskId, null, null,
+                $"Failed to create git worktree for {contract.TaskId}: {ex.Message}"));
+        }
+
+        var result = await Executor.RunAsync(
+            chat: chat,
+            contract: contract,
+            workingDirectory: worktreePath,
+            branch: branch,
+            maxToolCalls: 500,
+            ct: CancellationToken.None);
+
+        return BuildResultJson.Serialize(result);
+    }
+
+    static BuildResult RejectBuild(string taskId, string? worktreePath, string? branch, string reason)
+    {
+        var now = DateTime.UtcNow;
+        return new BuildResult(
+            TaskId: taskId,
+            TerminalState: TerminalState.Rejected,
+            StartedAt: now,
+            CompletedAt: now,
+            ToolCallCount: 0,
+            RetryCount: 0,
+            FilesChanged: Array.Empty<FileChange>(),
+            Tests: null,
+            Acceptance: Array.Empty<AcceptanceCheck>(),
+            SubAgentsSpawned: Array.Empty<SubAgentResult>(),
+            Notes: "",
+            BlockedQuestion: null,
+            RejectionReason: reason,
+            WorktreePath: worktreePath ?? "",
+            Branch: branch ?? "");
+    }
 
     [McpServerTool, Description("List task IDs, titles, and states from the contract directory. STUB.")]
     public static string ListTasks()
