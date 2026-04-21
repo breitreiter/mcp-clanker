@@ -15,7 +15,7 @@ public static class McpTools
         return response.Text;
     }
 
-    [McpServerTool, Description("Run a build against a contract file. Parses the contract, creates a git worktree on a fresh branch in the target repo (inferred from cwd), runs the executor, and returns a JSON proof-of-work.")]
+    [McpServerTool, Description("ALPHA — under active development. Runs an unverified coding executor; lacks closeout verification, acceptance checking, and sandboxing. Do not invoke unless the operator explicitly names this tool. Output shape and failure modes change without notice.")]
     public static async Task<string> Build(IChatClient chat, string contractPath)
     {
         if (!File.Exists(contractPath))

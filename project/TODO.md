@@ -6,6 +6,17 @@ the top when it's time to do more.
 
 ## v1 — next work
 
+**0. Author Claude Code skill + uplift MCP descriptions (paired; blocks v2-plan phase 2).**
+- Skill at `.claude/skills/clanker.md` (or wherever skills live for a project-tied trigger). Scope:
+  - When to delegate via `build()` vs doing the work in-context (rote, well-scoped, model-family-aligned)
+  - How to structure a contract using `template://contract`
+  - How to interpret proof-of-work terminal states + `blocked_question.category`
+  - The retry / rewrite loop (blocked → read POW + maybe trace → revise contract → retry)
+  - Cost framing: why this exists (cheap-executor delegation, preserving Opus budget)
+- Flip `McpTools.Build` description from current ALPHA-warning string to a working one *in the same change* so the two stay in sync.
+- Iterative — draft minimal, tune based on phase 2–5 failure modes rather than trying to foresee them.
+- Current `build` description is deliberately deterrent (*"ALPHA — under active development. Do not invoke unless the operator explicitly names this tool..."*) until this ships, to prevent proactive use while the system is half-built.
+
 **1. Externalize prompts.**
 - Move `BuildSystemPrompt` out of `Executor.cs:136` into `Prompts/default.md`
 - Load at executor startup; fallback chain `Prompts/<provider>.md` → `default.md`
@@ -39,12 +50,21 @@ the top when it's time to do more.
 - gpt-5.x is specifically trained on this; quality lift expected
 - Use Responses API's built-in if available, otherwise a small parser
 
-**6. Remaining tools.**
+**6. Multi-provider write-surface: one tool or two? (research + test, blocks #5 only if we run Anthropic in v1.)**
+- gpt-5.x is explicitly trained on `apply_patch` (OpenAI: *"the model has been trained to excel at this diff format"*). Anthropic's training story for diff formats is not published; Claude Code uses an exact-string-match `Edit` tool, presumably what Sonnet is tuned for. Aider ships 5 edit formats partly because one-size-fits-all loses quality.
+- Options in roughly ascending complexity:
+  - **Single tool (`apply_patch`) everywhere.** Accept Anthropic quality penalty. Cheapest; likely fine for v1 since primary executor is gpt-5.1-codex-mini.
+  - **Offer both, hint in system prompt to pick.** Relies on the model to route; models sometimes ignore tool-choice hints. Risky.
+  - **Two tools, per-provider tool construction.** `apply_patch` for OpenAI/Azure; `edit_file` (exact-string-match, nb-style) for Anthropic. Hide the wrong one per provider at tool-construction time. One executor code path; different tool dicts. Ugly but bounded.
+- This is a measurement question, not a design question. Research pass (do Anthropic docs or third-party writeups say anything concrete about Claude + unified-diff?) plus a targeted experiment once we have a medium-complexity contract: run the same contract with apply_patch against Claude Sonnet vs gpt-5.1-codex-mini, compare traces and diff quality.
+- Skip entirely if we're Azure-only for v1; pick up as a precursor to serious multi-provider work in v2.
+
+**7. Remaining tools.**
 - `grep` (port from nb, strip PDF/image bits)
 - `list_dir` (port from nb, trivial)
 - `todo_read` / `todo_write` — critical for gpt-5.x which relies heavily on todo + todo-rescue pattern
 
-**7. Remaining MCP handlers (currently stubs).**
+**8. Remaining MCP handlers (currently stubs).**
 - `list_tasks()` — walk contracts dir, return `[{id, title, state}]`
 - `get_contract(taskId)` — read contract file
 - `get_log(taskId)` — read trace sidecar
@@ -52,17 +72,17 @@ the top when it's time to do more.
 - `update_contract(contractPath, content)` — write a contract file
 - Blocks: need contract location convention (see hygiene section)
 
-**8. Rendered human transcript.**
+**9. Rendered human transcript.**
 - Markdown alongside JSONL trace
 - "Turn 1: model said X, called bash(ls), result was Y (truncated)..."
 - For the ~5% of runs where something's weird and the human needs to read
 
-**9. Light acceptance self-check.**
+**10. Light acceptance self-check.**
 - One terminal-time model turn: "for each acceptance item, pass/fail with citation to a specific line/file in the diff"
 - Cheap; gives *some* quality signal before v2's full closeout sub-agent lands
 - Model can still bluff but has to point at something specific
 
-**10. Token + cost estimation.**
+**11. Token + cost estimation.**
 - Sum `response.Usage.InputTokenCount` / `OutputTokenCount` across turns
 - Add `tokens_input_total`, `tokens_output_total` to proof-of-work
 - Dumb lookup table by model name → per-MTok rate (input/output separate), hardcoded, accept staleness
@@ -71,7 +91,7 @@ the top when it's time to do more.
 - Useful even at N=1 ("this contract used 8K tokens and cost $0.03"); aggregates into batch stats later
 - Answers the load-bearing question: is this system actually saving money vs just running Opus?
 
-**11. File tool polish — match nb patterns on existing tools.**
+**12. File tool polish — match nb patterns on existing tools.**
 
 Small quality fixes to bring our bash/read_file closer to nb's shape, from a diff of nb's Shell/ vs our Tools.cs:
 
@@ -82,7 +102,7 @@ Small quality fixes to bring our bash/read_file closer to nb's shape, from a dif
 - `bash`: capture the `description` parameter into the trace (currently accepted but unused). Pair with trace work (#2).
 - `bash`: optional per-call timeout with a configured cap (nb default 30s, per-call up-to-cap). Low priority — 120s blanket is fine until we see need.
 
-**12. Cosmetic JSON.**
+**13. Cosmetic JSON.**
 - Add `JavaScriptEncoder.UnsafeRelaxedJsonEscaping` to `BuildResultJson.Options` so backticks and smart quotes don't render as ``` / `“`
 
 ## v1 hygiene / known gaps
