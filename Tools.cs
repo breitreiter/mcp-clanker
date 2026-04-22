@@ -37,7 +37,7 @@ public static class Tools
             AIFunctionFactory.Create(
                 (
                     [Description("The bash command to execute. Runs in the contract's worktree.")] string command,
-                    [Description("Short rationale for the command, 1 sentence. Optional.")] string? description)
+                    [Description("Short rationale for the command, 1 sentence. Optional.")] string? description = null)
                 => RunBash(command, workingDirectory, state),
                 name: "bash",
                 description: "Execute a bash command in the contract's working directory. Stdout + stderr are captured and returned. Large output is truncated."),
@@ -45,8 +45,8 @@ public static class Tools
             AIFunctionFactory.Create(
                 (
                     [Description("Path relative to the working directory.")] string path,
-                    [Description("Optional 1-based line to start from. Defaults to the whole file.")] int? offset,
-                    [Description("Optional max number of lines to return.")] int? limit)
+                    [Description("Optional 1-based line to start from. Defaults to the whole file.")] int? offset = null,
+                    [Description("Optional max number of lines to return.")] int? limit = null)
                 => ReadFile(path, offset, limit, workingDirectory),
                 name: "read_file",
                 description: "Read the contents of a text file relative to the working directory. Supports pagination via offset/limit."),

@@ -39,9 +39,18 @@ public static class Executor
             new(ChatRole.User, "Begin."),
         };
 
+        // MaxOutputTokens sizing: reasoning models (GPT-5.x, Claude thinking
+        // variants) burn a chunk of this budget on hidden reasoning before
+        // emitting visible output or tool calls. 4096 was enough for trivial
+        // turns but too tight for write_file of a ~200-line source file:
+        // phase 2 validation run T-001 hit finish_reason=length on turn 5
+        // with 4096 output tokens consumed and zero tool calls emitted.
+        // 16384 gives reasoning room + a substantial write payload without
+        // materially changing cost on the cheap executor. Config-driven
+        // sizing is follow-up work (TODO).
         var options = new ChatOptions
         {
-            MaxOutputTokens = 4096,
+            MaxOutputTokens = 16384,
             Tools = tools,
         };
 
@@ -111,6 +120,30 @@ public static class Executor
 
                 if (calls.Count == 0)
                 {
+                    // "No tool calls" alone doesn't mean success — the model
+                    // can also bail because it hit the output-token ceiling
+                    // (finish_reason=length) or because a content filter
+                    // tripped. Both look identical in shape but are failures,
+                    // not completions. Check the reason before declaring victory.
+                    var finishReason = response.FinishReason;
+                    if (finishReason == ChatFinishReason.Length)
+                    {
+                        terminal = TerminalState.Blocked;
+                        blocked = new BlockedQuestion(
+                            BlockedCategory.RescopeOrCapability,
+                            $"Model hit per-turn output-token ceiling ({options.MaxOutputTokens}) at turn {turnCount} without emitting a tool call. Narrow the contract (smaller work per task) or raise MaxOutputTokens.",
+                            null);
+                        break;
+                    }
+                    if (finishReason == ChatFinishReason.ContentFilter)
+                    {
+                        terminal = TerminalState.Blocked;
+                        blocked = new BlockedQuestion(
+                            BlockedCategory.Abandon,
+                            $"Model response blocked by content filter at turn {turnCount}.",
+                            null);
+                        break;
+                    }
                     terminal = TerminalState.Success;
                     notes = response.Text ?? "";
                     break;
