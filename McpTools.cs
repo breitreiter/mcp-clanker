@@ -42,6 +42,8 @@ public static class McpTools
                 $"Failed to create git worktree for {contract.TaskId}: {ex.Message}"));
         }
 
+        var traceDirectory = Worktree.TraceDir(targetRepo, contract.TaskId);
+
         var result = await Executor.RunAsync(
             chat: chat,
             contract: contract,
@@ -49,6 +51,7 @@ public static class McpTools
             branch: branch,
             providerName: config["ActiveProvider"],
             maxToolCalls: 500,
+            traceDirectory: traceDirectory,
             ct: CancellationToken.None);
 
         return BuildResultJson.Serialize(result);
@@ -72,7 +75,8 @@ public static class McpTools
             BlockedQuestion: null,
             RejectionReason: reason,
             WorktreePath: worktreePath ?? "",
-            Branch: branch ?? "");
+            Branch: branch ?? "",
+            TracePath: "");
     }
 
     [McpServerTool, Description("List task IDs, titles, and states from the contract directory. STUB.")]

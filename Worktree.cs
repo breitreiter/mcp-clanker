@@ -11,6 +11,17 @@ namespace McpClanker;
 
 public static class Worktree
 {
+    // Resolves <parent>/<repo>.worktrees/<task-id>.trace/ — sibling-of-worktree,
+    // so all per-contract artefacts cluster under one parent dir.
+    public static string TraceDir(string targetRepo, string taskId)
+    {
+        var absTarget = System.IO.Path.GetFullPath(targetRepo);
+        var repoName = System.IO.Path.GetFileName(absTarget.TrimEnd(System.IO.Path.DirectorySeparatorChar));
+        var parent = System.IO.Path.GetDirectoryName(absTarget)
+            ?? throw new InvalidOperationException($"Target repo '{absTarget}' has no parent directory.");
+        return System.IO.Path.Combine(parent, $"{repoName}.worktrees", $"{taskId}.trace");
+    }
+
     public static (string Path, string Branch) Create(string targetRepo, string taskId)
     {
         var absTarget = System.IO.Path.GetFullPath(targetRepo);

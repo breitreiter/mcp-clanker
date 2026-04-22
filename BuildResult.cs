@@ -22,7 +22,8 @@ public record BuildResult(
     [property: JsonPropertyName("blocked_question")] BlockedQuestion? BlockedQuestion,
     [property: JsonPropertyName("rejection_reason")] string? RejectionReason,
     [property: JsonPropertyName("worktree_path")] string WorktreePath,
-    [property: JsonPropertyName("branch")] string Branch);
+    [property: JsonPropertyName("branch")] string Branch,
+    [property: JsonPropertyName("trace_path")] string TracePath);
 
 public record FileChange(
     [property: JsonPropertyName("path")] string Path,

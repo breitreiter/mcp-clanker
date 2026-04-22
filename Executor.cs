@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.AI;
 
 namespace McpClanker;
@@ -8,6 +9,10 @@ namespace McpClanker;
 //
 // Deliberately minimal for v1 — no doom-loop detector, no whitelist, no
 // retry, no closeout. Those land in v1.5 and v2 once this end-to-end works.
+//
+// Emits an append-only JSONL trace to traceDirectory/trace.jsonl as events
+// happen. Trace is forensic-grade (read it when proof-of-work isn't enough
+// to diagnose), not primary output.
 
 public static class Executor
 {
@@ -18,11 +23,13 @@ public static class Executor
         string branch,
         string? providerName,
         int maxToolCalls,
+        string traceDirectory,
         CancellationToken ct)
     {
         var startedAt = DateTime.UtcNow;
         var state = new ExecutorState();
         var tools = Tools.Create(workingDirectory, state);
+        var tracePath = Path.Combine(traceDirectory, "trace.jsonl");
 
         var history = new List<ChatMessage>
         {
@@ -39,59 +46,98 @@ public static class Executor
         TerminalState terminal = TerminalState.Failure;
         string notes = "";
         BlockedQuestion? blocked = null;
+        int turnCount = 0;
 
-        while (true)
+        using var trace = new TraceWriter(tracePath);
+        trace.WriteStart(contract.TaskId, providerName, workingDirectory, branch);
+
+        try
         {
-            if (state.ToolCallCount >= maxToolCalls)
+            while (true)
             {
-                terminal = TerminalState.Blocked;
-                blocked = new BlockedQuestion(
-                    BlockedCategory.Abandon,
-                    $"Tool-call budget ({maxToolCalls}) exhausted.",
-                    null);
-                break;
+                if (state.ToolCallCount >= maxToolCalls)
+                {
+                    terminal = TerminalState.Blocked;
+                    blocked = new BlockedQuestion(
+                        BlockedCategory.Abandon,
+                        $"Tool-call budget ({maxToolCalls}) exhausted.",
+                        null);
+                    break;
+                }
+
+                turnCount++;
+                var turnStart = Stopwatch.GetTimestamp();
+                ChatResponse response;
+                try
+                {
+                    response = await chat.GetResponseAsync(history, options, ct);
+                }
+                catch (Exception ex)
+                {
+                    var turnMs = (long)Stopwatch.GetElapsedTime(turnStart).TotalMilliseconds;
+                    trace.WriteTurn(turnCount, turnMs, null, null, $"exception:{ex.GetType().Name}", false);
+                    terminal = TerminalState.Blocked;
+                    blocked = new BlockedQuestion(
+                        BlockedCategory.TransientRetry,
+                        $"Chat provider call failed: {ex.GetType().Name}: {ex.Message}",
+                        null);
+                    break;
+                }
+                var turnDuration = (long)Stopwatch.GetElapsedTime(turnStart).TotalMilliseconds;
+
+                foreach (var m in response.Messages)
+                    history.Add(m);
+
+                var calls = response.Messages
+                    .SelectMany(m => m.Contents)
+                    .OfType<FunctionCallContent>()
+                    .ToList();
+
+                trace.WriteTurn(
+                    turnCount,
+                    turnDuration,
+                    response.Usage?.InputTokenCount,
+                    response.Usage?.OutputTokenCount,
+                    response.FinishReason?.ToString(),
+                    hadToolCalls: calls.Count > 0);
+
+                if (calls.Count == 0)
+                {
+                    terminal = TerminalState.Success;
+                    notes = response.Text ?? "";
+                    break;
+                }
+
+                var results = new List<AIContent>();
+                foreach (var call in calls)
+                {
+                    if (state.ToolCallCount >= maxToolCalls) break;
+
+                    var callStart = Stopwatch.GetTimestamp();
+                    var result = await InvokeTool(tools, call, ct);
+                    var callDuration = (long)Stopwatch.GetElapsedTime(callStart).TotalMilliseconds;
+
+                    var isError = result.StartsWith("ERROR:", StringComparison.Ordinal);
+                    trace.WriteToolCall(
+                        turn: turnCount,
+                        callId: call.CallId,
+                        name: call.Name,
+                        args: call.Arguments,
+                        success: !isError,
+                        durationMs: callDuration,
+                        resultPreview: TraceWriter.Preview(result, isError: false),
+                        error: isError ? TraceWriter.Preview(result, isError: true) : null);
+
+                    results.Add(new FunctionResultContent(call.CallId, result));
+                    state.ToolCallCount++;
+                }
+
+                history.Add(new ChatMessage(ChatRole.Tool, results));
             }
-
-            ChatResponse response;
-            try
-            {
-                response = await chat.GetResponseAsync(history, options, ct);
-            }
-            catch (Exception ex)
-            {
-                terminal = TerminalState.Blocked;
-                blocked = new BlockedQuestion(
-                    BlockedCategory.TransientRetry,
-                    $"Chat provider call failed: {ex.GetType().Name}: {ex.Message}",
-                    null);
-                break;
-            }
-
-            foreach (var m in response.Messages)
-                history.Add(m);
-
-            var calls = response.Messages
-                .SelectMany(m => m.Contents)
-                .OfType<FunctionCallContent>()
-                .ToList();
-
-            if (calls.Count == 0)
-            {
-                terminal = TerminalState.Success;
-                notes = response.Text ?? "";
-                break;
-            }
-
-            var results = new List<AIContent>();
-            foreach (var call in calls)
-            {
-                if (state.ToolCallCount >= maxToolCalls) break;
-                var result = await InvokeTool(tools, call, ct);
-                results.Add(new FunctionResultContent(call.CallId, result));
-                state.ToolCallCount++;
-            }
-
-            history.Add(new ChatMessage(ChatRole.Tool, results));
+        }
+        finally
+        {
+            trace.WriteEnd(terminal.ToString().ToLowerInvariant(), state.ToolCallCount, turnCount);
         }
 
         var filesChanged = state.FilesTouched
@@ -113,7 +159,8 @@ public static class Executor
             BlockedQuestion: blocked,
             RejectionReason: null,
             WorktreePath: workingDirectory,
-            Branch: branch);
+            Branch: branch,
+            TracePath: tracePath);
     }
 
     static async Task<string> InvokeTool(IList<AITool> tools, FunctionCallContent call, CancellationToken ct)
@@ -133,5 +180,4 @@ public static class Executor
             return $"ERROR: tool '{call.Name}' threw: {ex.GetType().Name}: {ex.Message}";
         }
     }
-
 }
