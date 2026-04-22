@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
 using ModelContextProtocol.Server;
 
 namespace McpClanker;
@@ -16,7 +17,7 @@ public static class McpTools
     }
 
     [McpServerTool, Description("ALPHA — under active development. Runs an unverified coding executor; lacks closeout verification, acceptance checking, and sandboxing. Do not invoke unless the operator explicitly names this tool. Output shape and failure modes change without notice.")]
-    public static async Task<string> Build(IChatClient chat, string contractPath)
+    public static async Task<string> Build(IChatClient chat, IConfiguration config, string contractPath)
     {
         if (!File.Exists(contractPath))
             return BuildResultJson.Serialize(RejectBuild("T-???", null, null, $"Contract file not found: {contractPath}"));
@@ -46,6 +47,7 @@ public static class McpTools
             contract: contract,
             workingDirectory: worktreePath,
             branch: branch,
+            providerName: config["ActiveProvider"],
             maxToolCalls: 500,
             ct: CancellationToken.None);
 

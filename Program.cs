@@ -112,7 +112,7 @@ public class Program
         Console.Error.WriteLine($"[build] cwd = {Directory.GetCurrentDirectory()}");
 
         var chat = Providers.Create(config);
-        var json = await McpTools.Build(chat, contractPath);
+        var json = await McpTools.Build(chat, config, contractPath);
         Console.WriteLine(json);
     }
 

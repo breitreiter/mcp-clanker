@@ -17,16 +17,7 @@ the top when it's time to do more.
 - Iterative — draft minimal, tune based on phase 2–5 failure modes rather than trying to foresee them.
 - Current `build` description is deliberately deterrent (*"ALPHA — under active development. Do not invoke unless the operator explicitly names this tool..."*) until this ships, to prevent proactive use while the system is half-built.
 
-**1. Externalize prompts.**
-- Move `BuildSystemPrompt` out of `Executor.cs:136` into `Prompts/default.md`
-- Load at executor startup; fallback chain `Prompts/<provider>.md` → `default.md`
-- Write `Prompts/AzureFoundry.md` now, Codex-aligned:
-  - 1-sentence ack + 1-2 sentence plan convention
-  - Bias against ending with clarifying questions
-  - Mention `update_plan` convention when we have that tool
-- Don't author Anthropic/Gemini variants until we actually run contracts there
-
-**2. Execution trace (forensic sidecar).**
+**1. Execution trace (forensic sidecar).**
 - JSONL per contract, in a sibling dir (not inside the worktree)
 - Per-turn: tokens in/out, duration, finish-reason, whether tools were called
 - Per-tool-call: name, args hash, success/fail, duration; full args for mutations/bash; full payload on errors
@@ -34,23 +25,23 @@ the top when it's time to do more.
 - Target: ~50 KB for a 100-turn contract
 - See `executor-v1-research.md` § "Trace (forensic sidecar...)"
 
-**3. Scope-adherence check.**
+**2. Scope-adherence check.**
 - Algorithmic, no LLM: if any `files_changed` path is outside contract `Scope:`, flag it
 - Surface in proof-of-work as a boolean + list of out-of-scope paths
 - ~1 hour, cheap real quality signal
 
-**4. Safety gates.**
+**3. Safety gates.**
 - Port nb's `CommandClassifier` (261 lines) → catches `rm -rf /`, `sudo`, `shutdown`, forkbombs, etc. Immediate `terminal_state=blocked`, category `abandon`
 - Network-egress checker: `curl`/`wget`/`nc`/`ssh`/`scp`/`rsync`/`gh api` (write verbs) denied by default; localhost exempted; per-contract `**Allowed network:**` override
 - Doom-loop detector: N=3 same-tool-args in a row; M=5 consecutive failures; K=2 consecutive denied-network attempts
 - Trigger → `blocked` with appropriate category from the `blocked_question.category` table
 
-**5. `apply_patch` tool.**
+**4. `apply_patch` tool.**
 - Replace `write_file` + `edit_file` with the model-native unified-diff-with-envelope format
 - gpt-5.x is specifically trained on this; quality lift expected
 - Use Responses API's built-in if available, otherwise a small parser
 
-**6. Multi-provider write-surface: one tool or two? (research + test, blocks #5 only if we run Anthropic in v1.)**
+**5. Multi-provider write-surface: one tool or two? (research + test, blocks #4 only if we run Anthropic in v1.)**
 - gpt-5.x is explicitly trained on `apply_patch` (OpenAI: *"the model has been trained to excel at this diff format"*). Anthropic's training story for diff formats is not published; Claude Code uses an exact-string-match `Edit` tool, presumably what Sonnet is tuned for. Aider ships 5 edit formats partly because one-size-fits-all loses quality.
 - Options in roughly ascending complexity:
   - **Single tool (`apply_patch`) everywhere.** Accept Anthropic quality penalty. Cheapest; likely fine for v1 since primary executor is gpt-5.1-codex-mini.
@@ -59,12 +50,12 @@ the top when it's time to do more.
 - This is a measurement question, not a design question. Research pass (do Anthropic docs or third-party writeups say anything concrete about Claude + unified-diff?) plus a targeted experiment once we have a medium-complexity contract: run the same contract with apply_patch against Claude Sonnet vs gpt-5.1-codex-mini, compare traces and diff quality.
 - Skip entirely if we're Azure-only for v1; pick up as a precursor to serious multi-provider work in v2.
 
-**7. Remaining tools.**
+**6. Remaining tools.**
 - `grep` (port from nb, strip PDF/image bits)
 - `list_dir` (port from nb, trivial)
 - `todo_read` / `todo_write` — critical for gpt-5.x which relies heavily on todo + todo-rescue pattern
 
-**8. Remaining MCP handlers (currently stubs).**
+**7. Remaining MCP handlers (currently stubs).**
 - `list_tasks()` — walk contracts dir, return `[{id, title, state}]`
 - `get_contract(taskId)` — read contract file
 - `get_log(taskId)` — read trace sidecar
@@ -72,26 +63,26 @@ the top when it's time to do more.
 - `update_contract(contractPath, content)` — write a contract file
 - Blocks: need contract location convention (see hygiene section)
 
-**9. Rendered human transcript.**
+**8. Rendered human transcript.**
 - Markdown alongside JSONL trace
 - "Turn 1: model said X, called bash(ls), result was Y (truncated)..."
 - For the ~5% of runs where something's weird and the human needs to read
 
-**10. Light acceptance self-check.**
+**9. Light acceptance self-check.**
 - One terminal-time model turn: "for each acceptance item, pass/fail with citation to a specific line/file in the diff"
 - Cheap; gives *some* quality signal before v2's full closeout sub-agent lands
 - Model can still bluff but has to point at something specific
 
-**11. Token + cost estimation.**
+**10. Token + cost estimation.**
 - Sum `response.Usage.InputTokenCount` / `OutputTokenCount` across turns
 - Add `tokens_input_total`, `tokens_output_total` to proof-of-work
 - Dumb lookup table by model name → per-MTok rate (input/output separate), hardcoded, accept staleness
 - `estimated_cost_usd` field computed from lookup + usage
-- Naturally hooks into the trace (#2) which already captures per-turn usage
+- Naturally hooks into the trace (#1) which already captures per-turn usage
 - Useful even at N=1 ("this contract used 8K tokens and cost $0.03"); aggregates into batch stats later
 - Answers the load-bearing question: is this system actually saving money vs just running Opus?
 
-**12. File tool polish — match nb patterns on existing tools.**
+**11. File tool polish — match nb patterns on existing tools.**
 
 Small quality fixes to bring our bash/read_file closer to nb's shape, from a diff of nb's Shell/ vs our Tools.cs:
 
@@ -99,10 +90,10 @@ Small quality fixes to bring our bash/read_file closer to nb's shape, from a dif
 - `read_file`: default `limit=2000` when not specified. Prevents a single big read from blowing context.
 - `bash`: replace flat half+marker+half truncation with nb's sandwich (head 50 lines + `"[N lines omitted (M KB)]"` + tail 20). Error info clusters at the end; flat split can bisect the interesting part.
 - `bash`: UTF-8 sanity check — return `"Error: Binary output detected"` rather than garbled text when output contains `�`.
-- `bash`: capture the `description` parameter into the trace (currently accepted but unused). Pair with trace work (#2).
+- `bash`: capture the `description` parameter into the trace (currently accepted but unused). Pair with trace work (#1).
 - `bash`: optional per-call timeout with a configured cap (nb default 30s, per-call up-to-cap). Low priority — 120s blanket is fine until we see need.
 
-**13. Cosmetic JSON.**
+**12. Cosmetic JSON.**
 - Add `JavaScriptEncoder.UnsafeRelaxedJsonEscaping` to `BuildResultJson.Options` so backticks and smart quotes don't render as ``` / `“`
 
 ## v1 hygiene / known gaps
