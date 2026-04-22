@@ -4,14 +4,14 @@ C# stdio MCP server that hands structured coding tasks (*contracts*) from Claude
 
 ## Status
 
-**Alpha. Not for real use.** The executor runs end-to-end against trivial contracts but is missing:
+**Alpha.** The executor runs end-to-end against narrow-scoped contracts but is missing:
 
 - Independent verification (closeout sub-agent)
 - Safety gates (danger-pattern detection, network-egress restriction, doom-loop detection)
 - Sandboxing (Docker)
 - Several tools (`apply_patch`, `grep`, `list_dir`, `todo_*`)
 
-The MCP `build` tool's description is deliberately deterrent so an Opus session doesn't reach for it proactively. Use only when explicitly invoked. See `project/v2-plan.md` for the path to "trust this enough to use at work."
+See `project/v2-plan.md` for the path to "trust this enough to use at work."
 
 ## What it does
 
@@ -87,7 +87,19 @@ Register the server in your Claude Code MCP config:
 }
 ```
 
-The server exposes `ping`, `build`, and five stub tools. The `build` description is currently a deterrent string because the Claude Code skill that teaches proper use hasn't been authored yet (phase 2 of `project/v2-plan.md`). Until then, invoke only when you explicitly want to exercise it.
+The server exposes `ping`, `build`, and five stub tools.
+
+### Install the Claude Code skill
+
+The `skills/clanker.md` file in this repo teaches Claude Code how to decide whether to delegate, write contracts, and interpret proof-of-work. Install it once at user scope so it's active in any repo where the MCP server is registered:
+
+```bash
+mkdir -p ~/.claude/skills
+cp skills/clanker.md ~/.claude/skills/clanker.md
+# or symlink to pick up edits: ln -s "$(pwd)/skills/clanker.md" ~/.claude/skills/clanker.md
+```
+
+Restart the Claude Code session after installing so the skill is picked up.
 
 ## Project layout
 
@@ -106,6 +118,7 @@ mcp-clanker/
 ├── Worktree.cs             # git worktree management
 ├── Prompts/                # system-prompt templates (default, AzureFoundry)
 ├── Templates/              # MCP resources (contract.md, proof-of-work.json)
+├── skills/clanker.md       # Claude Code skill — install to ~/.claude/skills/
 ├── appsettings.example.json
 ├── CLAUDE.md               # developer notes (build gotchas, conventions)
 └── project/                # design docs

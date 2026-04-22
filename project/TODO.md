@@ -6,7 +6,7 @@ the top when it's time to do more.
 
 ## v1 — next work
 
-**0. Author Claude Code skill + uplift MCP descriptions (paired; blocks v2-plan phase 2).**
+**0. Author Claude Code skill + uplift MCP descriptions (paired; blocks v2-plan phase 2).** *(done — `skills/clanker.md` in repo, install instructions in README; `McpTools.Build` description flipped from ALPHA-deterrent to working. Iterate the skill content as phase 2–5 failure modes surface.)*
 - Skill at `.claude/skills/clanker.md` (or wherever skills live for a project-tied trigger). Scope:
   - When to delegate via `build()` vs doing the work in-context (rote, well-scoped, model-family-aligned)
   - How to structure a contract using `template://contract`
@@ -15,7 +15,6 @@ the top when it's time to do more.
   - Cost framing: why this exists (cheap-executor delegation, preserving Opus budget)
 - Flip `McpTools.Build` description from current ALPHA-warning string to a working one *in the same change* so the two stay in sync.
 - Iterative — draft minimal, tune based on phase 2–5 failure modes rather than trying to foresee them.
-- Current `build` description is deliberately deterrent (*"ALPHA — under active development. Do not invoke unless the operator explicitly names this tool..."*) until this ships, to prevent proactive use while the system is half-built.
 
 **1. Scope-adherence check.**
 - Algorithmic, no LLM: if any `files_changed` path is outside contract `Scope:`, flag it

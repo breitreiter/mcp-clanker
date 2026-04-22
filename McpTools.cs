@@ -16,7 +16,7 @@ public static class McpTools
         return response.Text;
     }
 
-    [McpServerTool, Description("ALPHA — under active development. Runs an unverified coding executor; lacks closeout verification, acceptance checking, and sandboxing. Do not invoke unless the operator explicitly names this tool. Output shape and failure modes change without notice.")]
+    [McpServerTool, Description("Executes a contract file through a cheap, slow coding executor (default: Azure GPT-5.1-codex-mini) in a fresh git worktree, and returns a structured proof-of-work JSON. Long-running: minutes to tens of minutes. Use for rote, narrow-scoped tasks with explicit file Scope and 3-6 verifiable Acceptance bullets; don't use for exploration, cross-cutting refactors, or judgment-heavy work. Draft the contract from the `template://contract` resource. v1 executor: no closeout verification yet, so `terminal_state=success` is self-reported — eyeball the diff. See the `clanker` skill for the full delegate/write/interpret/retry workflow.")]
     public static async Task<string> Build(IChatClient chat, IConfiguration config, string contractPath)
     {
         if (!File.Exists(contractPath))
