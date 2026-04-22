@@ -144,6 +144,8 @@ public static class Executor
             .Select(kv => new FileChange(kv.Key, kv.Value))
             .ToList();
 
+        var scopeAdherence = CheckScopeAdherence(contract, filesChanged);
+
         return new BuildResult(
             TaskId: contract.TaskId,
             TerminalState: terminal,
@@ -152,6 +154,7 @@ public static class Executor
             ToolCallCount: state.ToolCallCount,
             RetryCount: 0,
             FilesChanged: filesChanged,
+            ScopeAdherence: scopeAdherence,
             Tests: null,
             Acceptance: Array.Empty<AcceptanceCheck>(),
             SubAgentsSpawned: Array.Empty<SubAgentResult>(),
@@ -161,6 +164,22 @@ public static class Executor
             WorktreePath: workingDirectory,
             Branch: branch,
             TracePath: tracePath);
+    }
+
+    // Algorithmic scope check: flag any files_changed path that isn't in the
+    // contract's declared Scope. Normalization: forward slashes, trimmed.
+    // Case-sensitive — git and Linux both are, so a case mismatch is a real
+    // deviation, not an alias.
+    static ScopeAdherence CheckScopeAdherence(Contract contract, IReadOnlyList<FileChange> filesChanged)
+    {
+        var declared = contract.Scope.Select(s => Normalize(s.Path)).ToHashSet(StringComparer.Ordinal);
+        var outOfScope = filesChanged
+            .Where(f => !declared.Contains(Normalize(f.Path)))
+            .Select(f => f.Path)
+            .ToList();
+        return new ScopeAdherence(InScope: outOfScope.Count == 0, OutOfScopePaths: outOfScope);
+
+        static string Normalize(string p) => p.Trim().Replace('\\', '/');
     }
 
     static async Task<string> InvokeTool(IList<AITool> tools, FunctionCallContent call, CancellationToken ct)

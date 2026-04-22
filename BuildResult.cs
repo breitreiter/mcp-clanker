@@ -15,6 +15,7 @@ public record BuildResult(
     [property: JsonPropertyName("tool_call_count")] int ToolCallCount,
     [property: JsonPropertyName("retry_count")] int RetryCount,
     [property: JsonPropertyName("files_changed")] IReadOnlyList<FileChange> FilesChanged,
+    [property: JsonPropertyName("scope_adherence")] ScopeAdherence ScopeAdherence,
     [property: JsonPropertyName("tests")] TestsReport? Tests,
     [property: JsonPropertyName("acceptance")] IReadOnlyList<AcceptanceCheck> Acceptance,
     [property: JsonPropertyName("sub_agents_spawned")] IReadOnlyList<SubAgentResult> SubAgentsSpawned,
@@ -28,6 +29,10 @@ public record BuildResult(
 public record FileChange(
     [property: JsonPropertyName("path")] string Path,
     [property: JsonPropertyName("action")] FileAction Action);
+
+public record ScopeAdherence(
+    [property: JsonPropertyName("in_scope")] bool InScope,
+    [property: JsonPropertyName("out_of_scope_paths")] IReadOnlyList<string> OutOfScopePaths);
 
 public record BlockedQuestion(
     [property: JsonPropertyName("category")] BlockedCategory Category,

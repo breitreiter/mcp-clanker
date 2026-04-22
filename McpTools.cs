@@ -68,6 +68,7 @@ public static class McpTools
             ToolCallCount: 0,
             RetryCount: 0,
             FilesChanged: Array.Empty<FileChange>(),
+            ScopeAdherence: new ScopeAdherence(InScope: true, OutOfScopePaths: Array.Empty<string>()),
             Tests: null,
             Acceptance: Array.Empty<AcceptanceCheck>(),
             SubAgentsSpawned: Array.Empty<SubAgentResult>(),
