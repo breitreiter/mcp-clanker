@@ -43,18 +43,29 @@ public static class McpTools
         }
 
         var traceDirectory = Worktree.TraceDir(targetRepo, contract.TaskId);
+        var providerName = config["ActiveProvider"];
+        var modelName = ResolveModelName(config, providerName);
 
         var result = await Executor.RunAsync(
             chat: chat,
             contract: contract,
             workingDirectory: worktreePath,
             branch: branch,
-            providerName: config["ActiveProvider"],
+            providerName: providerName,
+            modelName: modelName,
             maxToolCalls: 500,
             traceDirectory: traceDirectory,
             ct: CancellationToken.None);
 
         return BuildResultJson.Serialize(result);
+    }
+
+    static string? ResolveModelName(IConfiguration config, string? activeProvider)
+    {
+        if (string.IsNullOrEmpty(activeProvider)) return null;
+        var section = config.GetSection("ChatProviders").GetChildren()
+            .FirstOrDefault(p => string.Equals(p["Name"], activeProvider, StringComparison.OrdinalIgnoreCase));
+        return section?["Model"];
     }
 
     static BuildResult RejectBuild(string taskId, string? worktreePath, string? branch, string reason)
@@ -67,6 +78,9 @@ public static class McpTools
             CompletedAt: now,
             ToolCallCount: 0,
             RetryCount: 0,
+            TokensInputTotal: 0L,
+            TokensOutputTotal: 0L,
+            EstimatedCostUsd: 0m,
             FilesChanged: Array.Empty<FileChange>(),
             ScopeAdherence: new ScopeAdherence(InScope: true, OutOfScopePaths: Array.Empty<string>()),
             Tests: null,

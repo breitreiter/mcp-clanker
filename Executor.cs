@@ -22,6 +22,7 @@ public static class Executor
         string workingDirectory,
         string branch,
         string? providerName,
+        string? modelName,
         int maxToolCalls,
         string traceDirectory,
         CancellationToken ct)
@@ -47,6 +48,8 @@ public static class Executor
         string notes = "";
         BlockedQuestion? blocked = null;
         int turnCount = 0;
+        long tokensIn = 0;
+        long tokensOut = 0;
 
         using var trace = new TraceWriter(tracePath);
         trace.WriteStart(contract.TaskId, providerName, workingDirectory, branch);
@@ -84,6 +87,9 @@ public static class Executor
                     break;
                 }
                 var turnDuration = (long)Stopwatch.GetElapsedTime(turnStart).TotalMilliseconds;
+
+                tokensIn += response.Usage?.InputTokenCount ?? 0;
+                tokensOut += response.Usage?.OutputTokenCount ?? 0;
 
                 foreach (var m in response.Messages)
                     history.Add(m);
@@ -145,6 +151,7 @@ public static class Executor
             .ToList();
 
         var scopeAdherence = CheckScopeAdherence(contract, filesChanged);
+        var estimatedCost = Pricing.Estimate(modelName, tokensIn, tokensOut);
 
         return new BuildResult(
             TaskId: contract.TaskId,
@@ -153,6 +160,9 @@ public static class Executor
             CompletedAt: DateTime.UtcNow,
             ToolCallCount: state.ToolCallCount,
             RetryCount: 0,
+            TokensInputTotal: tokensIn,
+            TokensOutputTotal: tokensOut,
+            EstimatedCostUsd: estimatedCost,
             FilesChanged: filesChanged,
             ScopeAdherence: scopeAdherence,
             Tests: null,
