@@ -90,6 +90,7 @@ Small quality fixes to bring our bash/read_file closer to nb's shape, from a dif
 
 ## v1 hygiene / known gaps
 
+- **Remove `build(targetRepo)` dev escape hatch before v2/shipping.** Added 2026-04-22 during phase 2 validation to let one Claude Code session target a different repo than its cwd. Production flow is one Claude Code session per target repo — the param is a weird surface in that world (wrong-repo footgun, injection vector, confuses the mental model). Keep while validating v2 against multiple repos from a single session; delete before shipping. Guards in place: absolute path, existing dir, has `.git` entry. See `ResolveTargetRepo` in `McpTools.cs`.
 - **Contract location convention.** Currently `build()` takes any path; no convention. Proposal: `<target-repo>/contracts/T-NNN-slug.md`. Decide and document when we implement `list_tasks`.
 - **Worktree cleanup tool.** Right now parent must `git worktree remove --force` + `git branch -D` manually. Worth an MCP tool (`cleanup_contract(taskId)`) once we have real contract volume.
 - **Worktree snapshot semantics.** Worktree is created from HEAD — uncommitted work in the main checkout is invisible to the executor. Document this in CLAUDE.md so future-me doesn't get confused.

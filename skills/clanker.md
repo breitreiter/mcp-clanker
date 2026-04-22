@@ -64,6 +64,8 @@ Common contract mistakes:
 
 The worktree is on a branch `contract/T-NNN`. It is not automatically cleaned up — merge, cherry-pick, or `git worktree remove` yourself.
 
+**Target repo:** `build()` operates on the current working directory of the MCP server process (typically the repo Claude Code was started in). There's a `targetRepo` parameter for overriding this, but it's a dev/test convenience that will be removed before v2 ships — don't rely on it for day-to-day work. The intended flow is one Claude Code session per target repo.
+
 ## Reading proof-of-work
 
 Shape (see `template://proof-of-work` for full schema). Check in this order:

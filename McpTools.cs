@@ -17,7 +17,12 @@ public static class McpTools
     }
 
     [McpServerTool, Description("Executes a contract file through a cheap, slow coding executor (default: Azure GPT-5.1-codex-mini) in a fresh git worktree, and returns a structured proof-of-work JSON. Long-running: minutes to tens of minutes. Use for rote, narrow-scoped tasks with explicit file Scope and 3-6 verifiable Acceptance bullets; don't use for exploration, cross-cutting refactors, or judgment-heavy work. Draft the contract from the `template://contract` resource. v1 executor: no closeout verification yet, so `terminal_state=success` is self-reported — eyeball the diff. See the `clanker` skill for the full delegate/write/interpret/retry workflow.")]
-    public static async Task<string> Build(IChatClient chat, IConfiguration config, string contractPath)
+    public static async Task<string> Build(
+        IChatClient chat,
+        IConfiguration config,
+        string contractPath,
+        [Description("Dev/test convenience only — absolute path to the target git repository to operate on. Normally unset: the server uses its own current working directory. Scheduled for removal before v2/shipping — the production flow is one Claude Code session per target repo.")]
+        string? targetRepo = null)
     {
         if (!File.Exists(contractPath))
             return BuildResultJson.Serialize(RejectBuild("T-???", null, null, $"Contract file not found: {contractPath}"));
@@ -25,8 +30,11 @@ public static class McpTools
         var markdown = await File.ReadAllTextAsync(contractPath);
         var contract = ContractParser.Parse(markdown);
 
-        var targetRepo = Directory.GetCurrentDirectory();
-        var validation = ContractValidator.Validate(contract, targetRepo);
+        var (resolvedTargetRepo, targetRepoError) = ResolveTargetRepo(targetRepo);
+        if (resolvedTargetRepo is null)
+            return BuildResultJson.Serialize(RejectBuild(contract.TaskId, null, null, targetRepoError!));
+
+        var validation = ContractValidator.Validate(contract, resolvedTargetRepo);
         if (!validation.IsValid)
             return BuildResultJson.Serialize(RejectBuild(contract.TaskId, null, null, validation.RejectionReason!));
 
@@ -34,7 +42,7 @@ public static class McpTools
         string branch;
         try
         {
-            (worktreePath, branch) = Worktree.Create(targetRepo, contract.TaskId);
+            (worktreePath, branch) = Worktree.Create(resolvedTargetRepo, contract.TaskId);
         }
         catch (Exception ex)
         {
@@ -42,7 +50,7 @@ public static class McpTools
                 $"Failed to create git worktree for {contract.TaskId}: {ex.Message}"));
         }
 
-        var traceDirectory = Worktree.TraceDir(targetRepo, contract.TaskId);
+        var traceDirectory = Worktree.TraceDir(resolvedTargetRepo, contract.TaskId);
         var providerName = config["ActiveProvider"];
         var modelName = ResolveModelName(config, providerName);
 
@@ -66,6 +74,34 @@ public static class McpTools
         var section = config.GetSection("ChatProviders").GetChildren()
             .FirstOrDefault(p => string.Equals(p["Name"], activeProvider, StringComparison.OrdinalIgnoreCase));
         return section?["Model"];
+    }
+
+    // Normalizes and validates an optional caller-supplied targetRepo. Guards
+    // against relative paths, non-existent directories, and non-git-repo
+    // targets. The parameter itself is a dev/test convenience — see the
+    // [Description] on Build's targetRepo parameter for the removal plan.
+    static (string? Resolved, string? Error) ResolveTargetRepo(string? provided)
+    {
+        string candidate;
+        try
+        {
+            candidate = Path.GetFullPath(provided ?? Directory.GetCurrentDirectory());
+        }
+        catch (Exception ex)
+        {
+            return (null, $"Could not resolve targetRepo path: {ex.Message}");
+        }
+
+        if (!Directory.Exists(candidate))
+            return (null, $"targetRepo directory does not exist: {candidate}");
+
+        // A git repo root has a `.git/` directory; a worktree has a `.git` file
+        // pointing at the real gitdir. Accept both.
+        var dotGit = Path.Combine(candidate, ".git");
+        if (!Directory.Exists(dotGit) && !File.Exists(dotGit))
+            return (null, $"targetRepo is not a git repository (no .git entry): {candidate}");
+
+        return (candidate, null);
     }
 
     static BuildResult RejectBuild(string taskId, string? worktreePath, string? branch, string reason)
