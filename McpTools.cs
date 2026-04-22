@@ -91,7 +91,8 @@ public static class McpTools
             RejectionReason: reason,
             WorktreePath: worktreePath ?? "",
             Branch: branch ?? "",
-            TracePath: "");
+            TracePath: "",
+            TranscriptPath: "");
     }
 
     [McpServerTool, Description("List task IDs, titles, and states from the contract directory. STUB.")]

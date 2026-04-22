@@ -55,7 +55,7 @@ the top when it's time to do more.
 - `update_contract(contractPath, content)` — write a contract file
 - Blocks: need contract location convention (see hygiene section)
 
-**7. Rendered human transcript.**
+**7. Rendered human transcript.** *(done — `TranscriptRenderer.cs`, written to `transcript.md` next to `trace.jsonl` at end-of-run. Also regenerable via `dotnet run -- --render-transcript <trace.jsonl>`.)*
 - Markdown alongside JSONL trace
 - "Turn 1: model said X, called bash(ls), result was Y (truncated)..."
 - For the ~5% of runs where something's weird and the human needs to read

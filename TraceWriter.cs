@@ -21,6 +21,7 @@ public sealed class TraceWriter : IDisposable
 {
     const int ResultPreviewChars = 200;
     const int ErrorPreviewChars = 2000;
+    const int TurnTextPreviewChars = 4000;
 
     static readonly JsonSerializerOptions Options = new()
     {
@@ -39,19 +40,21 @@ public sealed class TraceWriter : IDisposable
         _writer = new StreamWriter(filePath, append: false, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)) { AutoFlush = true };
     }
 
-    public void WriteStart(string taskId, string? provider, string worktreePath, string branch)
+    public void WriteStart(string taskId, string? title, string? goal, string? provider, string worktreePath, string branch)
         => Write(new
         {
             type = "start",
             version = "1",
             timestamp = DateTime.UtcNow,
             task_id = taskId,
+            title,
+            goal,
             provider,
             worktree_path = worktreePath,
             branch,
         });
 
-    public void WriteTurn(int n, long durationMs, long? tokensIn, long? tokensOut, string? finishReason, bool hadToolCalls)
+    public void WriteTurn(int n, long durationMs, long? tokensIn, long? tokensOut, string? finishReason, bool hadToolCalls, string? text)
         => Write(new
         {
             type = "turn",
@@ -62,6 +65,7 @@ public sealed class TraceWriter : IDisposable
             tokens_out = tokensOut,
             finish_reason = finishReason,
             had_tool_calls = hadToolCalls,
+            text = TruncateText(text, TurnTextPreviewChars),
         });
 
     public void WriteToolCall(
@@ -109,6 +113,12 @@ public sealed class TraceWriter : IDisposable
         if (string.IsNullOrEmpty(result)) return "";
         var limit = isError ? ErrorPreviewChars : ResultPreviewChars;
         return result.Length <= limit ? result : result[..limit] + $"… [+{result.Length - limit} chars]";
+    }
+
+    static string? TruncateText(string? text, int budget)
+    {
+        if (string.IsNullOrEmpty(text)) return null;
+        return text.Length <= budget ? text : text[..budget] + $"… [+{text.Length - budget} chars]";
     }
 
     void Write(object entry)

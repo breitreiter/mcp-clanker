@@ -31,6 +31,7 @@ public static class Executor
         var state = new ExecutorState();
         var tools = Tools.Create(workingDirectory, state);
         var tracePath = Path.Combine(traceDirectory, "trace.jsonl");
+        var transcriptPath = Path.Combine(traceDirectory, "transcript.md");
 
         var history = new List<ChatMessage>
         {
@@ -52,7 +53,7 @@ public static class Executor
         long tokensOut = 0;
 
         using var trace = new TraceWriter(tracePath);
-        trace.WriteStart(contract.TaskId, providerName, workingDirectory, branch);
+        trace.WriteStart(contract.TaskId, contract.Title, contract.Goal, providerName, workingDirectory, branch);
 
         try
         {
@@ -78,7 +79,7 @@ public static class Executor
                 catch (Exception ex)
                 {
                     var turnMs = (long)Stopwatch.GetElapsedTime(turnStart).TotalMilliseconds;
-                    trace.WriteTurn(turnCount, turnMs, null, null, $"exception:{ex.GetType().Name}", false);
+                    trace.WriteTurn(turnCount, turnMs, null, null, $"exception:{ex.GetType().Name}", false, null);
                     terminal = TerminalState.Blocked;
                     blocked = new BlockedQuestion(
                         BlockedCategory.TransientRetry,
@@ -105,7 +106,8 @@ public static class Executor
                     response.Usage?.InputTokenCount,
                     response.Usage?.OutputTokenCount,
                     response.FinishReason?.ToString(),
-                    hadToolCalls: calls.Count > 0);
+                    hadToolCalls: calls.Count > 0,
+                    text: response.Text);
 
                 if (calls.Count == 0)
                 {
@@ -146,6 +148,16 @@ public static class Executor
             trace.WriteEnd(terminal.ToString().ToLowerInvariant(), state.ToolCallCount, turnCount);
         }
 
+        try
+        {
+            TranscriptRenderer.Render(tracePath, transcriptPath);
+        }
+        catch (Exception ex)
+        {
+            // Transcript is best-effort; JSONL is the authoritative record.
+            Console.Error.WriteLine($"[mcp-clanker] transcript render failed: {ex.GetType().Name}: {ex.Message}");
+        }
+
         var filesChanged = state.FilesTouched
             .Select(kv => new FileChange(kv.Key, kv.Value))
             .ToList();
@@ -173,7 +185,8 @@ public static class Executor
             RejectionReason: null,
             WorktreePath: workingDirectory,
             Branch: branch,
-            TracePath: tracePath);
+            TracePath: tracePath,
+            TranscriptPath: transcriptPath);
     }
 
     // Algorithmic scope check: flag any files_changed path that isn't in the

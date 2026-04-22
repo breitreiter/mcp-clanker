@@ -29,6 +29,12 @@ public class Program
             return;
         }
 
+        if (args.Length >= 2 && args[0] == "--render-transcript")
+        {
+            RunRenderTranscript(args[1]);
+            return;
+        }
+
         var builder = Host.CreateApplicationBuilder(args);
 
         // Host.CreateApplicationBuilder loads appsettings.json from the current
@@ -114,6 +120,17 @@ public class Program
         var chat = Providers.Create(config);
         var json = await McpTools.Build(chat, config, contractPath);
         Console.WriteLine(json);
+    }
+
+    // Regenerates transcript.md from an existing trace.jsonl. Useful for old
+    // traces or for iterating on the renderer without re-running a contract.
+    static void RunRenderTranscript(string tracePath)
+    {
+        var outputPath = Path.Combine(
+            Path.GetDirectoryName(tracePath) ?? ".",
+            "transcript.md");
+        TranscriptRenderer.Render(tracePath, outputPath);
+        Console.Error.WriteLine($"[render-transcript] wrote {outputPath}");
     }
 
     // Verifies multi-turn tool-calling round-trips correctly against the active
