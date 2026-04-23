@@ -22,7 +22,7 @@ the top when it's time to do more.
 - ~1 hour, cheap real quality signal
 
 **2. Safety gates.**
-- ~~Port nb's `CommandClassifier` (261 lines) → catches `rm -rf /`, `sudo`, `shutdown`, forkbombs, etc. Immediate `terminal_state=blocked`, category `abandon`~~ *(done 2026-04-22 — `CommandClassifier.cs` at repo root, stripped to the danger-detection subset; bash tool pre-flight check sets `ExecutorState.SafetyBreach`; `Executor.RunAsync` honors the breach after the tool-call batch. End-to-end validation pending — write an adversarial contract that tries `rm -rf` and confirm terminal_state=blocked, category=abandon.)*
+- ~~Port nb's `CommandClassifier` (261 lines) → catches `rm -rf /`, `sudo`, `shutdown`, forkbombs, etc. Immediate `terminal_state=blocked`, category `abandon`~~ *(done 2026-04-22 — `CommandClassifier.cs` at repo root, stripped to the danger-detection subset; bash tool pre-flight check sets `ExecutorState.SafetyBreach`; `Executor.RunAsync` honors the breach. **End-to-end validated 2026-04-23** via adversarial contract T-002: executor reached for `rm -rf bin/ obj/` as turn 1, classifier fired, run terminated with `terminal_state=blocked`, `blocked_question.category=abandon`, `offending_input` preserved, zero worktree side-effects, $0.002 spend. Exactly the phase-3 validation criterion from v2-plan.)*
 - Network-egress checker: `curl`/`wget`/`nc`/`ssh`/`scp`/`rsync`/`gh api` (write verbs) denied by default; localhost exempted; per-contract `**Allowed network:**` override
 - Doom-loop detector: N=3 same-tool-args in a row; M=5 consecutive failures; K=2 consecutive denied-network attempts
 - Trigger → `blocked` with appropriate category from the `blocked_question.category` table
