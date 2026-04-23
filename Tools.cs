@@ -22,6 +22,7 @@ public class ExecutorState
 
     public int ToolCallCount { get; set; }
     public Dictionary<string, FileAction> FilesTouched { get; } = new();
+    public TodoManager Todos { get; } = new();
 
     readonly List<ToolCallRecord> _recentCalls = new();
     public IReadOnlyList<ToolCallRecord> RecentCalls => _recentCalls;
@@ -101,6 +102,44 @@ public static class Tools
                 => GrepTool.Grep(pattern, path, file_pattern, case_insensitive, max_results, output_mode, workingDirectory),
                 name: "grep",
                 description: "Search file contents with a regex. Automatically skips binary files and common non-source directories (.git, node_modules, bin, obj, .vs, __pycache__, .venv, venv, .idea, dist, build, .next, .nuget). Returns `file:line: content` lines by default; set output_mode=files_with_matches for file paths only."),
+
+            AIFunctionFactory.Create(
+                (
+                    [Description("Directory path relative to the working directory. Empty or omitted = the working directory itself.")] string? path = null)
+                => ListDir(path, workingDirectory),
+                name: "list_dir",
+                description: "List the contents of a directory. Returns `[dir] name` and `[file] name` entries, directories first, both alphabetically sorted. Skips the same non-source directories as grep."),
+
+            AIFunctionFactory.Create(
+                () => state.Todos.Render(),
+                name: "todo_read",
+                description: "Read the current session's todo checklist. Returns lines in `- [status] content` format, or `(no todos)` if empty. Use to check what's pending or in progress without guessing."),
+
+            AIFunctionFactory.Create(
+                (
+                    [Description("Array of { content, status } changes. `content` is the unique key: unknown adds, known updates, `cancelled` removes. `status` is one of: pending, in_progress, completed, cancelled.")] List<TodoChange> changes)
+                => WriteTodos(changes, state),
+                name: "todo_write",
+                description: """
+                    Create or update the session's task checklist. Use this to plan multi-step
+                    work and track progress as you go. Strongly recommended when a contract has
+                    3+ distinct steps — write the checklist FIRST, then execute against it.
+
+                    How it works:
+                      - Each change has `content` (unique key, the task description) and `status`.
+                      - Statuses: pending | in_progress | completed | cancelled.
+                      - Unknown content → added as new task.
+                      - Known content → status updated.
+                      - cancelled → removed.
+                      - Only send the items that CHANGED; items you don't mention stay as-is.
+
+                    Rules:
+                      - Mark a task `in_progress` BEFORE you start it, not after.
+                      - Mark `completed` IMMEDIATELY on finish — don't batch.
+                      - Only ONE task in_progress at a time.
+                      - Don't mark completed if tests fail, work is partial, or you're blocked.
+                      - Blocked? Keep in_progress and add a new task describing the blocker.
+                    """),
         };
 
         return tools;
@@ -181,6 +220,51 @@ public static class Tools
             output.Append(Truncate(stderr.ToString()));
         }
         return output.ToString();
+    }
+
+    // --- list_dir ---
+
+    // Must match GrepTool's SkipDirectories. Intentional duplication for now —
+    // consolidate into a shared constant if a third file tool needs the list.
+    static readonly HashSet<string> ListDirSkip = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".git", "node_modules", "bin", "obj", ".vs", "__pycache__",
+        ".venv", "venv", ".idea", "dist", "build", ".next", ".nuget",
+    };
+
+    static string ListDir(string? path, string cwd)
+    {
+        var resolved = ResolveInsideCwd(path ?? "", cwd);
+        if (resolved is null)
+            return $"ERROR: path '{path}' resolves outside the working directory.";
+        if (!Directory.Exists(resolved))
+            return $"ERROR: directory '{path}' does not exist.";
+
+        var entries = new List<string>();
+
+        foreach (var dir in Directory.GetDirectories(resolved).OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
+        {
+            var name = Path.GetFileName(dir);
+            if (!ListDirSkip.Contains(name))
+                entries.Add($"[dir]  {name}");
+        }
+
+        foreach (var file in Directory.GetFiles(resolved).OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+            entries.Add($"[file] {Path.GetFileName(file)}");
+
+        return entries.Count > 0 ? string.Join("\n", entries) : "(empty directory)";
+    }
+
+    // --- todo_write ---
+
+    static string WriteTodos(List<TodoChange> changes, ExecutorState state)
+    {
+        if (changes is null || changes.Count == 0)
+            return "No changes submitted.\n\nCurrent list:\n" + state.Todos.Render();
+
+        var applied = state.Todos.ApplyChanges(changes);
+        var current = state.Todos.Render();
+        return $"Changes applied:\n{string.Join("\n", applied)}\n\nCurrent list:\n{current}";
     }
 
     // --- read_file ---
