@@ -89,6 +89,18 @@ public static class Tools
                 => WriteFile(path, content, workingDirectory, state),
                 name: "write_file",
                 description: "Create or overwrite a file at the given path with the supplied contents."),
+
+            AIFunctionFactory.Create(
+                (
+                    [Description("Regular expression to search for.")] string pattern,
+                    [Description("Directory or file to search, relative to the working directory. Empty or omitted = the whole working directory.")] string? path = null,
+                    [Description("Filename glob filter like `*.cs` or `*Test*.cs`. Applied to filename only; path-qualified globs aren't supported — narrow with `path=` instead.")] string? file_pattern = null,
+                    [Description("If true, case-insensitive search. Default false.")] bool? case_insensitive = null,
+                    [Description("Max results to return. Default 100.")] int? max_results = null,
+                    [Description("`content` (default) returns matching lines as `file:line: content`. `files_with_matches` returns only matching file paths.")] string? output_mode = null)
+                => GrepTool.Grep(pattern, path, file_pattern, case_insensitive, max_results, output_mode, workingDirectory),
+                name: "grep",
+                description: "Search file contents with a regex. Automatically skips binary files and common non-source directories (.git, node_modules, bin, obj, .vs, __pycache__, .venv, venv, .idea, dist, build, .next, .nuget). Returns `file:line: content` lines by default; set output_mode=files_with_matches for file paths only."),
         };
 
         return tools;

@@ -42,7 +42,7 @@ the top when it's time to do more.
 - Skip entirely if we're Azure-only for v1; pick up as a precursor to serious multi-provider work in v2.
 
 **5. Remaining tools.**
-- `grep` (port from nb, strip PDF/image bits)
+- ~~`grep` (port from nb, strip PDF/image bits)~~ *(done 2026-04-23 — `GrepTool.cs` at repo root. Ported from nb with two simplifications: no `ShellEnvironment` dependency (takes `workingDirectory` directly) and no `Microsoft.Extensions.FileSystemGlobbing` dependency (filename-level glob only, regex-converted inline — path-qualified patterns use `path=` instead). Keeps nb's skip-dirs list, null-byte binary detection, 200-char line truncation, and both `content` / `files_with_matches` modes. Paths in output are relative to working directory (slight improvement over nb which uses relative-to-search-path). End-to-end validation pending.)*
 - `list_dir` (port from nb, trivial)
 - `todo_read` / `todo_write` — critical for gpt-5.x which relies heavily on todo + todo-rescue pattern
 
