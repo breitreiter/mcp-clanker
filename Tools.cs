@@ -93,6 +93,39 @@ public static class Tools
 
             AIFunctionFactory.Create(
                 (
+                    [Description("A complete patch in the codex sentinel format. Must start with '*** Begin Patch' and end with '*** End Patch'.")] string input)
+                => ApplyPatchInvoke(input, workingDirectory, state),
+                name: "apply_patch",
+                description: """
+                    Apply a multi-file patch. **Preferred for GPT-family models**, which are
+                    trained on this exact format; other model families may prefer write_file.
+
+                    The `input` parameter contains a complete patch in this format:
+
+                        *** Begin Patch
+                        *** Update File: path/to/file
+                        @@ optional_context_anchor
+                         context line (unchanged)
+                        -line to remove
+                        +line to add
+                        *** Add File: path/to/new
+                        +every line of the new file
+                        *** Delete File: path/to/old
+                        *** End Patch
+
+                    Rules:
+                      - Paths are relative to the contract's worktree.
+                      - Each change line starts with exactly one sigil: ' ' (context), '-' (remove), '+' (add). The character immediately after the sigil is content.
+                      - `@@ header` lines anchor a chunk's location; use multiple headers to disambiguate nested scopes (`@@ class Foo` then `@@ def bar`).
+                      - Within one Update File, chunks are located in document order via a forward-only cursor — duplicate code must be disambiguated with @@ headers.
+                      - `*** End of File` after a chunk means "this edit is at EOF".
+                      - Rename via `*** Move to: new/path` placed immediately after `*** Update File:`.
+
+                    On success returns a per-file summary (Add / Update / Delete / UpdateAndMove with line counts). On parse or apply failure returns an error with the patch NOT partially applied.
+                    """),
+
+            AIFunctionFactory.Create(
+                (
                     [Description("Regular expression to search for.")] string pattern,
                     [Description("Directory or file to search, relative to the working directory. Empty or omitted = the whole working directory.")] string? path = null,
                     [Description("Filename glob filter like `*.cs` or `*Test*.cs`. Applied to filename only; path-qualified globs aren't supported — narrow with `path=` instead.")] string? file_pattern = null,
@@ -220,6 +253,74 @@ public static class Tools
             output.Append(Truncate(stderr.ToString()));
         }
         return output.ToString();
+    }
+
+    // --- apply_patch ---
+
+    static string ApplyPatchInvoke(string input, string cwd, ExecutorState state)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return "ERROR: apply_patch input is empty.";
+
+        List<FileOp> ops;
+        try
+        {
+            ops = PatchParser.Parse(input);
+        }
+        catch (PatchParseException ex)
+        {
+            return $"ERROR: patch parse failed: {ex.Message}";
+        }
+
+        if (ops.Count == 0)
+            return "ERROR: patch contained no file operations.";
+
+        PatchPreview preview;
+        try
+        {
+            preview = PatchApplier.BuildPreview(ops, cwd);
+        }
+        catch (PatchApplyException ex)
+        {
+            return $"ERROR: patch validation failed: {ex.Message}";
+        }
+
+        try
+        {
+            PatchApplier.Apply(preview, ops, cwd);
+        }
+        catch (Exception ex)
+        {
+            return $"ERROR: patch application failed mid-flight (files may be partially modified): {ex.GetType().Name}: {ex.Message}";
+        }
+
+        var summaryLines = new List<string>();
+        foreach (var fp in preview.Files)
+        {
+            var relFinal = Path.GetRelativePath(cwd, fp.FinalPath);
+            switch (fp.Kind)
+            {
+                case FileOpKind.Add:
+                    state.RecordWrite(relFinal, existedBefore: false);
+                    summaryLines.Add($"[Add]    {relFinal} ({fp.NewLineCount} lines)");
+                    break;
+                case FileOpKind.Delete:
+                    state.FilesTouched[fp.OriginalPath] = FileAction.Deleted;
+                    summaryLines.Add($"[Delete] {fp.OriginalPath} ({fp.OldLineCount} lines removed)");
+                    break;
+                case FileOpKind.Update:
+                    state.RecordWrite(fp.OriginalPath, existedBefore: true);
+                    summaryLines.Add($"[Update] {fp.OriginalPath} (−{fp.OldLineCount} / +{fp.NewLineCount} lines)");
+                    break;
+                case FileOpKind.UpdateAndMove:
+                    state.FilesTouched[fp.OriginalPath] = FileAction.Deleted;
+                    state.RecordWrite(relFinal, existedBefore: false);
+                    summaryLines.Add($"[Move]   {fp.OriginalPath} → {relFinal} (−{fp.OldLineCount} / +{fp.NewLineCount} lines)");
+                    break;
+            }
+        }
+
+        return "patch applied.\n" + string.Join("\n", summaryLines);
     }
 
     // --- list_dir ---
