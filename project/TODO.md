@@ -46,7 +46,7 @@ the top when it's time to do more.
 - `list_dir` (port from nb, trivial)
 - `todo_read` / `todo_write` — critical for gpt-5.x which relies heavily on todo + todo-rescue pattern
 
-**6. Remaining MCP handlers (currently stubs).**
+**6. Remaining MCP handlers (currently stubs).** *(done 2026-04-23 — all five un-stubbed in `McpTools.cs`. Convention: contracts live at `<target-repo>/contracts/T-NNN-*.md`; logs at `<parent>/<repo>.worktrees/<taskId>.trace/transcript.md`. Each handler takes the same optional `targetRepo` dev escape hatch as `build()`. `list_tasks` returns JSON array of `{task_id,title,file_path}`; `get_contract(taskId)` returns raw markdown (finds by prefix match, case-insensitive, with or without `T-` prefix); `get_log(taskId)` returns the rendered transcript md (not the JSONL — that's raw forensics, read directly); `validate_contract` returns JSON `{is_valid, rejection_reason, task_id, title, goal, scope, acceptance, non_goals}`; `update_contract(path, content)` writes unconditionally but refuses if the parent dir doesn't exist. End-to-end validation pending — restart MCP subprocess, call each handler from Claude Code.)*
 - `list_tasks()` — walk contracts dir, return `[{id, title, state}]`
 - `get_contract(taskId)` — read contract file
 - `get_log(taskId)` — read trace sidecar

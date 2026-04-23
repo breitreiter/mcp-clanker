@@ -1,4 +1,6 @@
 using System.ComponentModel;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using ModelContextProtocol.Server;
@@ -131,23 +133,166 @@ public static class McpTools
             TranscriptPath: "");
     }
 
-    [McpServerTool, Description("List task IDs, titles, and states from the contract directory. STUB.")]
-    public static string ListTasks()
-        => "STUB ListTasks";
+    [McpServerTool, Description("List all contracts under `<target-repo>/contracts/*.md` with their task IDs and titles. Returns a JSON array of { task_id, title, file_path }. Use to inventory what's been written; call get_log(taskId) to see whether each has been run.")]
+    public static string ListTasks(
+        [Description("Dev/test convenience only — see build()'s targetRepo parameter.")]
+        string? targetRepo = null)
+    {
+        var (resolved, error) = ResolveTargetRepo(targetRepo);
+        if (resolved is null)
+            return SerializeError(error!);
 
-    [McpServerTool, Description("Read a contract by task ID. STUB.")]
-    public static string GetContract(string taskId)
-        => $"STUB GetContract: taskId={taskId}";
+        var contractsDir = Path.Combine(resolved, "contracts");
+        if (!Directory.Exists(contractsDir))
+            return JsonSerializer.Serialize(Array.Empty<TaskSummary>(), TaskJsonOptions);
 
-    [McpServerTool, Description("Read the full execution log for a task. Use when proof-of-work isn't enough to diagnose. STUB.")]
-    public static string GetLog(string taskId)
-        => $"STUB GetLog: taskId={taskId}";
+        var tasks = new List<TaskSummary>();
+        foreach (var path in Directory.EnumerateFiles(contractsDir, "*.md", SearchOption.TopDirectoryOnly).OrderBy(p => p))
+        {
+            string markdown;
+            try { markdown = File.ReadAllText(path); }
+            catch { continue; }
+            var contract = ContractParser.Parse(markdown);
+            tasks.Add(new TaskSummary(contract.TaskId, contract.Title, path));
+        }
+        return JsonSerializer.Serialize(tasks, TaskJsonOptions);
+    }
 
-    [McpServerTool, Description("Dry-run validation of a contract: structure and scope-file existence. Does not execute. STUB.")]
-    public static string ValidateContract(string contractPath)
-        => $"STUB ValidateContract: contractPath={contractPath}";
+    [McpServerTool, Description("Return the raw markdown content of a contract identified by task ID (looks up `<target-repo>/contracts/T-<id>-*.md`). Use when a parent needs to re-read or revise the contract body.")]
+    public static string GetContract(
+        string taskId,
+        [Description("Dev/test convenience only — see build()'s targetRepo parameter.")]
+        string? targetRepo = null)
+    {
+        var (resolved, error) = ResolveTargetRepo(targetRepo);
+        if (resolved is null)
+            return SerializeError(error!);
 
-    [McpServerTool, Description("Write a new or revised contract to disk. STUB.")]
-    public static string UpdateContract(string contractPath, string content)
-        => $"STUB UpdateContract: contractPath={contractPath}, contentLen={content.Length}";
+        var path = FindContractByTaskId(resolved, taskId);
+        if (path is null)
+            return SerializeError($"No contract file matching task ID `{taskId}` found under `{Path.Combine(resolved, "contracts")}`.");
+
+        return File.ReadAllText(path);
+    }
+
+    [McpServerTool, Description("Return the rendered markdown transcript of a contract's most recent run, if any. Reads `<parent>/<repo>.worktrees/<taskId>.trace/transcript.md`. Use when the proof-of-work notes aren't enough to diagnose what happened. For raw JSONL, read the sibling trace.jsonl directly.")]
+    public static string GetLog(
+        string taskId,
+        [Description("Dev/test convenience only — see build()'s targetRepo parameter.")]
+        string? targetRepo = null)
+    {
+        var (resolved, error) = ResolveTargetRepo(targetRepo);
+        if (resolved is null)
+            return SerializeError(error!);
+
+        var traceDir = Worktree.TraceDir(resolved, taskId);
+        var transcriptPath = Path.Combine(traceDir, "transcript.md");
+        if (!File.Exists(transcriptPath))
+            return SerializeError($"No transcript found for task `{taskId}` at `{transcriptPath}`. The task may not have been run yet, or the trace directory was cleaned up.");
+
+        return File.ReadAllText(transcriptPath);
+    }
+
+    [McpServerTool, Description("Dry-run a contract: parse it and check structural validity + scope-file existence, without executing. Returns JSON { is_valid, rejection_reason, task_id, title, goal, scope, acceptance, non_goals }. Use before build() to catch contract errors without paying for a model turn.")]
+    public static async Task<string> ValidateContract(
+        string contractPath,
+        [Description("Dev/test convenience only — see build()'s targetRepo parameter.")]
+        string? targetRepo = null)
+    {
+        if (!File.Exists(contractPath))
+            return SerializeError($"Contract file not found: {contractPath}");
+
+        var markdown = await File.ReadAllTextAsync(contractPath);
+        var contract = ContractParser.Parse(markdown);
+
+        var (resolved, targetRepoError) = ResolveTargetRepo(targetRepo);
+        if (resolved is null)
+            return SerializeError(targetRepoError!);
+
+        var validation = ContractValidator.Validate(contract, resolved);
+
+        var result = new ValidationResult(
+            IsValid: validation.IsValid,
+            RejectionReason: validation.RejectionReason,
+            TaskId: contract.TaskId,
+            Title: contract.Title,
+            Goal: contract.Goal,
+            Scope: contract.Scope.Select(s => new ScopeSummary(s.Action.ToString().ToLowerInvariant(), s.Path)).ToArray(),
+            Acceptance: contract.Acceptance,
+            NonGoals: contract.NonGoals);
+
+        return JsonSerializer.Serialize(result, TaskJsonOptions);
+    }
+
+    [McpServerTool, Description("Write or overwrite a contract markdown file at the given path. Parent directories are NOT auto-created — caller is responsible for the target location (convention: `<target-repo>/contracts/T-NNN-slug.md`).")]
+    public static async Task<string> UpdateContract(string contractPath, string content)
+    {
+        var parent = Path.GetDirectoryName(contractPath);
+        if (!string.IsNullOrEmpty(parent) && !Directory.Exists(parent))
+            return SerializeError($"Parent directory does not exist: {parent}");
+
+        var existedBefore = File.Exists(contractPath);
+        await File.WriteAllTextAsync(contractPath, content);
+        var bytes = new FileInfo(contractPath).Length;
+        return JsonSerializer.Serialize(new UpdateResult(
+            Path: contractPath,
+            Action: existedBefore ? "overwrote" : "created",
+            Bytes: bytes), TaskJsonOptions);
+    }
+
+    // --- helpers for the un-stubbed handlers ---
+
+    static readonly JsonSerializerOptions TaskJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        WriteIndented = true,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower) },
+    };
+
+    static string SerializeError(string message)
+        => JsonSerializer.Serialize(new { error = message }, TaskJsonOptions);
+
+    // Finds `<targetRepo>/contracts/T-<taskId or matching-prefix>-*.md`. Accepts
+    // taskId with or without the "T-" prefix, case-insensitively.
+    static string? FindContractByTaskId(string targetRepo, string taskId)
+    {
+        var contractsDir = Path.Combine(targetRepo, "contracts");
+        if (!Directory.Exists(contractsDir)) return null;
+
+        var normalized = taskId.StartsWith("T-", StringComparison.OrdinalIgnoreCase) ? taskId : $"T-{taskId}";
+
+        // Exact-id prefix: T-001.md or T-001-anything.md
+        foreach (var path in Directory.EnumerateFiles(contractsDir, $"{normalized}*.md"))
+        {
+            var name = Path.GetFileNameWithoutExtension(path);
+            if (string.Equals(name, normalized, StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith(normalized + "-", StringComparison.OrdinalIgnoreCase))
+                return path;
+        }
+        return null;
+    }
+
+    record TaskSummary(
+        [property: JsonPropertyName("task_id")] string TaskId,
+        [property: JsonPropertyName("title")] string Title,
+        [property: JsonPropertyName("file_path")] string FilePath);
+
+    record ValidationResult(
+        [property: JsonPropertyName("is_valid")] bool IsValid,
+        [property: JsonPropertyName("rejection_reason")] string? RejectionReason,
+        [property: JsonPropertyName("task_id")] string TaskId,
+        [property: JsonPropertyName("title")] string Title,
+        [property: JsonPropertyName("goal")] string Goal,
+        [property: JsonPropertyName("scope")] IReadOnlyList<ScopeSummary> Scope,
+        [property: JsonPropertyName("acceptance")] IReadOnlyList<string> Acceptance,
+        [property: JsonPropertyName("non_goals")] IReadOnlyList<string> NonGoals);
+
+    record ScopeSummary(
+        [property: JsonPropertyName("action")] string Action,
+        [property: JsonPropertyName("path")] string Path);
+
+    record UpdateResult(
+        [property: JsonPropertyName("path")] string Path,
+        [property: JsonPropertyName("action")] string Action,
+        [property: JsonPropertyName("bytes")] long Bytes);
 }
