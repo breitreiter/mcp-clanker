@@ -93,6 +93,16 @@ public static class Tools
             return $"ERROR: command blocked by safety gate: {danger.Reason}. This run will terminate.";
         }
 
+        var egress = NetworkEgressChecker.Check(command);
+        if (egress.IsBlocked)
+        {
+            state.FlagSafetyBreach(new SafetyBreach(
+                Category: BlockedCategory.RescopeOrCapability,
+                Summary: $"Bash command blocked by network-egress gate: {egress.Reason}.",
+                OffendingInput: command));
+            return $"ERROR: command blocked by network-egress gate: {egress.Reason}. This run will terminate.";
+        }
+
         using var proc = new Process
         {
             StartInfo = new ProcessStartInfo
