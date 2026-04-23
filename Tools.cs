@@ -83,7 +83,7 @@ public static class Tools
     const int MaxToolOutputBytes = 8 * 1024;
     const int BashTimeoutSeconds = 120;
 
-    public static IList<AITool> Create(string workingDirectory, ExecutorState state)
+    public static IList<AITool> Create(string workingDirectory, ExecutorState state, SandboxConfig sandbox)
     {
         var tools = new List<AITool>
         {
@@ -91,7 +91,7 @@ public static class Tools
                 (
                     [Description("The bash command to execute. Runs in the contract's worktree.")] string command,
                     [Description("Short rationale for the command, 1 sentence. Optional.")] string? description = null)
-                => RunBash(command, workingDirectory, state),
+                => RunBash(command, workingDirectory, state, sandbox),
                 name: "bash",
                 description: "Execute a bash command in the contract's working directory. Stdout + stderr are captured and returned. Large output is truncated."),
 
@@ -240,7 +240,7 @@ public static class Tools
 
     // --- bash ---
 
-    static async Task<string> RunBash(string command, string cwd, ExecutorState state)
+    static async Task<string> RunBash(string command, string cwd, ExecutorState state, SandboxConfig sandbox)
     {
         if (string.IsNullOrWhiteSpace(command))
             return "ERROR: empty command.";
@@ -265,20 +265,7 @@ public static class Tools
             return $"ERROR: command blocked by network-egress gate: {egress.Reason}. This run will terminate.";
         }
 
-        using var proc = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = "/bin/bash",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                WorkingDirectory = cwd,
-            },
-        };
-        proc.StartInfo.ArgumentList.Add("-c");
-        proc.StartInfo.ArgumentList.Add(command);
+        using var proc = BuildBashProcess(command, cwd, sandbox);
 
         var stdout = new StringBuilder();
         var stderr = new StringBuilder();
@@ -313,6 +300,69 @@ public static class Tools
             output.Append(Truncate(stderr.ToString()));
         }
         return output.ToString();
+    }
+
+    // Build the Process that will run the bash command. In Host mode that's
+    // /bin/bash -c <cmd>. In Docker mode it's `docker run --rm` with the
+    // worktree bind-mounted at /work, a shared nuget volume at /root/.nuget/
+    // packages, and --network=<configured, default "none">. Kill-on-timeout
+    // semantics work in both modes: killing the client process triggers
+    // `docker run --rm` to tear down the container.
+    static Process BuildBashProcess(string command, string cwd, SandboxConfig sandbox)
+    {
+        if (sandbox.Mode == SandboxMode.Host)
+        {
+            var proc = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "/bin/bash",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    WorkingDirectory = cwd,
+                },
+            };
+            proc.StartInfo.ArgumentList.Add("-c");
+            proc.StartInfo.ArgumentList.Add(command);
+            return proc;
+        }
+
+        // Docker mode. Worktree bind-mount is rw (contract needs to write
+        // build artifacts back to /work, which round-trip to the host via
+        // the bind). Nuget cache is a named volume, shared across contract
+        // runs, so common packages are downloaded at most once ever.
+        // --network defaults to "none" so a compromised or confused run
+        // can't exfiltrate; contracts that legitimately need a new
+        // package fail the `dotnet restore` and return cleanly — the
+        // parent is expected to handle dep decisions, not clanker.
+        var docker = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "docker",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            },
+        };
+        var args = docker.StartInfo.ArgumentList;
+        args.Add("run");
+        args.Add("--rm");
+        args.Add("--network"); args.Add(sandbox.Network);
+        args.Add("--memory"); args.Add(sandbox.MemoryLimit);
+        args.Add("--cpus"); args.Add(sandbox.CpuLimit);
+        args.Add("--pids-limit"); args.Add(sandbox.PidsLimit.ToString());
+        args.Add("-v"); args.Add($"{Path.GetFullPath(cwd)}:/work");
+        args.Add("-v"); args.Add($"{sandbox.NugetVolume}:/root/.nuget/packages");
+        args.Add("-w"); args.Add("/work");
+        args.Add(sandbox.Image);
+        args.Add("/bin/bash");
+        args.Add("-c");
+        args.Add(command);
+        return docker;
     }
 
     // --- apply_patch ---

@@ -35,6 +35,7 @@ Don't delegate:
 - Design decisions, API-shape choices, or anything judgment-heavy.
 - Vague goals ("clean up X", "improve Y").
 - Tasks where one wrong early step cascades (architecture changes).
+- **Anything that adds a new package dependency** (`dotnet add package`, `npm install <new>`, `cargo add`, etc.). When clanker runs in its Docker sandbox, the container has no network — only packages already in the cache work. Packages the project hasn't adopted yet will fail to restore. That's deliberate: package-adoption is a judgment call you own, not something to delegate. Adopt the dep yourself, then delegate the work that uses it.
 
 Heuristic: if you can't write crisp Acceptance bullets in under a minute, the contract isn't ready.
 
@@ -123,7 +124,7 @@ Keep these in mind when interpreting results:
 
 - **Closeout reviewer is in.** `acceptance[]` is populated by an independent read-only reviewer after success runs. A `success` terminal means the reviewer passed every bullet; `failure` after closeout means the reviewer caught something — parent can second-guess by reading the trace and the closeout citations.
 - **Safety gates are in.** Danger-pattern (`rm -rf`, `sudo`, etc.), network-egress (`curl`/`wget`/`gh api` without localhost exemption), and doom-loop (3× same tool-args or 5 consecutive failures) detectors will block with the right `blocked_question.category`. Contracts that genuinely need network don't yet have a declaration mechanism — coming.
-- **No sandbox yet.** Executor runs on the host in a git worktree. Home directory is reachable in principle; safety gates cover the common cases.
+- **Docker sandbox shipped, opt-in.** Set `Sandbox.Mode="Docker"` in clanker's `appsettings.json` and run `./sandbox/build.sh` to activate. In that mode each `bash` call runs in a throwaway container with `--network=none`, so a confused / compromised executor can't touch the host filesystem outside the worktree or reach the network. Default is still `Host` mode for backward compatibility.
 - **Toolset:** `bash`, `read_file`, `write_file`, `apply_patch`, `grep`, `list_dir`, `todo_read`, `todo_write`. Prefer `apply_patch` for edits when running GPT-family.
 - **Manual cleanup.** Worktrees and branches are not auto-removed.
 - **`retry_count` is always 0.** In-loop retries not yet implemented.

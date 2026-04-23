@@ -4,14 +4,14 @@ C# stdio MCP server that hands structured coding tasks (*contracts*) from Claude
 
 ## Status
 
-**Alpha.** The executor runs end-to-end against narrow-scoped contracts but is missing:
+**Beta.** v2-plan phases 1–6 have all shipped and been validated. The executor runs against medium contracts with:
 
-- Independent verification (closeout sub-agent)
-- Safety gates (danger-pattern detection, network-egress restriction, doom-loop detection)
-- Sandboxing (Docker)
-- Several tools (`apply_patch`, `grep`, `list_dir`, `todo_*`)
+- Safety gates (danger-pattern classifier, network-egress gate, doom-loop detector)
+- Independent closeout verification (fresh-context reviewer with read-only tools; overrides self-report and demotes `success` → `failure` when any bullet flunks)
+- Full toolkit (`bash`, `read_file`, `write_file`, `apply_patch`, `grep`, `list_dir`, `todo_read`, `todo_write`)
+- Docker sandbox (opt-in via `Sandbox.Mode=Docker` in appsettings)
 
-See `project/v2-plan.md` for the path to "trust this enough to use at work."
+Remaining gaps before GA: a `**Allowed network:**` contract declaration (so contracts that need network can opt in), config-driven `MaxOutputTokens` per provider, Windows shell detection, MCP-server hot-reload shim for faster iteration. See `project/TODO.md`.
 
 ## What it does
 
@@ -89,6 +89,18 @@ Register the server in your Claude Code MCP config:
 
 The server exposes `ping`, `build`, and five stub tools.
 
+### Build the Docker sandbox (optional, recommended for real use)
+
+Clanker defaults to `Sandbox.Mode=Host`, which runs `bash` directly on the host — convenient during development, but no isolation beyond the application-layer safety gates. For production-like use, build the sandbox image:
+
+```bash
+./sandbox/build.sh
+```
+
+That builds `clanker-sandbox:latest` (dotnet SDK 8 + git) and creates the `clanker-nuget` Docker volume used to share the package cache across contracts. Then flip `Sandbox.Mode` to `"Docker"` in `appsettings.json`.
+
+In Docker mode, each `bash` call runs in a throwaway container with `--network=none` and the worktree bind-mounted at `/work`. The package cache volume means `dotnet restore` works for packages you've already downloaded once; **packages the project hasn't adopted yet will fail to restore** — that's deliberate. The parent (Claude Code) decides what packages a project should adopt, not clanker's executor.
+
 ### Install the Claude Code skill
 
 The `skills/clanker.md` file in this repo teaches Claude Code how to decide whether to delegate, write contracts, and interpret proof-of-work. Install it once at user scope so it's active in any repo where the MCP server is registered:
@@ -116,8 +128,9 @@ mcp-clanker/
 ├── Prompts.cs              # system-prompt loader
 ├── TraceWriter.cs          # JSONL forensic sidecar
 ├── Worktree.cs             # git worktree management
-├── Prompts/                # system-prompt templates (default, AzureFoundry)
+├── Prompts/                # system-prompt templates (default, AzureFoundry, closeout)
 ├── Templates/              # MCP resources (contract.md, proof-of-work.json)
+├── sandbox/                # Dockerfile + build.sh for the execution sandbox
 ├── skills/clanker.md       # Claude Code skill — install to ~/.claude/skills/
 ├── appsettings.example.json
 ├── CLAUDE.md               # developer notes (build gotchas, conventions)

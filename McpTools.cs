@@ -18,7 +18,7 @@ public static class McpTools
         return response.Text;
     }
 
-    [McpServerTool, Description("Executes a contract file through a cheap, slow coding executor (default: Azure GPT-5.1-codex-mini) in a fresh git worktree, and returns a structured proof-of-work JSON. Long-running: minutes to tens of minutes. Use for rote, narrow-scoped tasks with explicit file Scope and 3-6 verifiable Acceptance bullets; don't use for exploration, cross-cutting refactors, or judgment-heavy work. Draft the contract from the `template://contract` resource. Runs with safety gates (danger-pattern / network-egress / doom-loop) and a closeout reviewer that independently verifies acceptance on success — `terminal_state=failure` from a success-then-demoted run means the closeout caught something. Still unsandboxed on the host. See the `clanker` skill for the full delegate/write/interpret/retry workflow.")]
+    [McpServerTool, Description("Executes a contract file through a cheap, slow coding executor (default: Azure GPT-5.1-codex-mini) in a fresh git worktree, and returns a structured proof-of-work JSON. Long-running: minutes to tens of minutes. Use for rote, narrow-scoped tasks with explicit file Scope and 3-6 verifiable Acceptance bullets; don't use for exploration, cross-cutting refactors, or judgment-heavy work. Draft the contract from the `template://contract` resource. Runs with safety gates (danger-pattern / network-egress / doom-loop), a closeout reviewer that independently verifies acceptance on success (`terminal_state=failure` from a success-then-demoted run means the closeout caught something), and an optional Docker sandbox (opt-in via appsettings). **Do not delegate tasks that require adding a package the project hasn't already adopted** — the sandbox's cached-only-packages posture means new deps fail to restore. Package-adoption is a judgment call the caller owns. See the `clanker` skill for the full delegate/write/interpret/retry workflow.")]
     public static async Task<string> Build(
         IChatClient chat,
         IConfiguration config,
@@ -55,6 +55,7 @@ public static class McpTools
         var traceDirectory = Worktree.TraceDir(resolvedTargetRepo, contract.TaskId);
         var providerName = config["ActiveProvider"];
         var modelName = ResolveModelName(config, providerName);
+        var sandbox = SandboxConfig.FromConfiguration(config);
 
         var result = await Executor.RunAsync(
             chat: chat,
@@ -65,6 +66,7 @@ public static class McpTools
             modelName: modelName,
             maxToolCalls: 500,
             traceDirectory: traceDirectory,
+            sandbox: sandbox,
             ct: CancellationToken.None);
 
         return BuildResultJson.Serialize(result);

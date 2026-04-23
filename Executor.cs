@@ -25,11 +25,12 @@ public static class Executor
         string? modelName,
         int maxToolCalls,
         string traceDirectory,
+        SandboxConfig sandbox,
         CancellationToken ct)
     {
         var startedAt = DateTime.UtcNow;
         var state = new ExecutorState();
-        var tools = Tools.Create(workingDirectory, state);
+        var tools = Tools.Create(workingDirectory, state, sandbox);
         var tracePath = Path.Combine(traceDirectory, "trace.jsonl");
         var transcriptPath = Path.Combine(traceDirectory, "transcript.md");
 
