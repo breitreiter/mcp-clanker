@@ -174,6 +174,20 @@ public static class Executor
                 }
 
                 history.Add(new ChatMessage(ChatRole.Tool, results));
+
+                // A safety gate (currently: CommandClassifier on bash) can flag
+                // a breach during tool dispatch. When flagged, terminate the
+                // whole run as blocked — safety breaches aren't recoverable
+                // inside the same contract.
+                if (state.SafetyBreach is { } breach)
+                {
+                    terminal = TerminalState.Blocked;
+                    blocked = new BlockedQuestion(
+                        Category: breach.Category,
+                        Summary: breach.Summary,
+                        OffendingInput: breach.OffendingInput);
+                    break;
+                }
             }
         }
         finally

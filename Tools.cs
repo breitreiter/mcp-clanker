@@ -18,12 +18,25 @@ public class ExecutorState
     public int ToolCallCount { get; set; }
     public Dictionary<string, FileAction> FilesTouched { get; } = new();
 
+    // Set by any tool that detects a safety-gate violation (e.g. bash command
+    // matching a danger pattern). Executor checks this after each tool-call
+    // batch and terminates the run as blocked if present. Only the first
+    // breach wins — a safety breach is terminal, not advisory.
+    public SafetyBreach? SafetyBreach { get; private set; }
+
+    public void FlagSafetyBreach(SafetyBreach breach)
+    {
+        SafetyBreach ??= breach;
+    }
+
     public void RecordWrite(string relativePath, bool existedBefore)
     {
         if (!FilesTouched.ContainsKey(relativePath))
             FilesTouched[relativePath] = existedBefore ? FileAction.Modified : FileAction.Created;
     }
 }
+
+public record SafetyBreach(BlockedCategory Category, string Summary, string OffendingInput);
 
 public static class Tools
 {
@@ -69,6 +82,16 @@ public static class Tools
     {
         if (string.IsNullOrWhiteSpace(command))
             return "ERROR: empty command.";
+
+        var danger = CommandClassifier.Classify(command);
+        if (danger.IsDangerous)
+        {
+            state.FlagSafetyBreach(new SafetyBreach(
+                Category: BlockedCategory.Abandon,
+                Summary: $"Bash command blocked by safety gate: {danger.Reason}.",
+                OffendingInput: command));
+            return $"ERROR: command blocked by safety gate: {danger.Reason}. This run will terminate.";
+        }
 
         using var proc = new Process
         {
