@@ -29,6 +29,16 @@ public class ExecutorState
     // skipped the finish_work call even after the nudge.
     public List<AcceptanceReport>? AcceptanceReports { get; set; }
 
+    // Populated by the `finish_work` tool during the closeout phase. Closeout
+    // is an independent review (fresh context, diff-only input, read-only
+    // tools); if it runs and reports, its verdicts OVERRIDE AcceptanceReports
+    // in the returned POW — see Executor.RunAsync.
+    public List<AcceptanceReport>? CloseoutReports { get; set; }
+
+    // Free-text summary the closeout reviewer optionally produces alongside
+    // its per-bullet verdicts. Landing in SubAgentResult.Notes.
+    public string? CloseoutNotes { get; set; }
+
     readonly List<ToolCallRecord> _recentCalls = new();
     public IReadOnlyList<ToolCallRecord> RecentCalls => _recentCalls;
 
@@ -187,6 +197,45 @@ public static class Tools
         };
 
         return tools;
+    }
+
+    // Read-only subset used by the closeout reviewer. Same implementations as
+    // the main-loop tools, minus anything that mutates state or the filesystem.
+    // No ExecutorState plumbing — closeout's only state-write is finish_work,
+    // which is constructed inline in Executor.RunCloseoutAsync against
+    // state.CloseoutReports.
+    public static IList<AITool> CreateReadOnly(string workingDirectory)
+    {
+        return new List<AITool>
+        {
+            AIFunctionFactory.Create(
+                (
+                    [Description("Path relative to the working directory.")] string path,
+                    [Description("Optional 1-based line to start from. Defaults to the whole file.")] int? offset = null,
+                    [Description("Optional max number of lines to return.")] int? limit = null)
+                => ReadFile(path, offset, limit, workingDirectory),
+                name: "read_file",
+                description: "Read the contents of a text file relative to the working directory."),
+
+            AIFunctionFactory.Create(
+                (
+                    [Description("Regular expression to search for.")] string pattern,
+                    [Description("Directory or file to search, relative to the working directory. Empty or omitted = the whole working directory.")] string? path = null,
+                    [Description("Filename glob filter like `*.cs` or `*Test*.cs`. Applied to filename only.")] string? file_pattern = null,
+                    [Description("If true, case-insensitive search. Default false.")] bool? case_insensitive = null,
+                    [Description("Max results to return. Default 100.")] int? max_results = null,
+                    [Description("`content` (default) returns matching lines as `file:line: content`. `files_with_matches` returns only matching file paths.")] string? output_mode = null)
+                => GrepTool.Grep(pattern, path, file_pattern, case_insensitive, max_results, output_mode, workingDirectory),
+                name: "grep",
+                description: "Search file contents with a regex. Skips binary files and common non-source directories."),
+
+            AIFunctionFactory.Create(
+                (
+                    [Description("Directory path relative to the working directory. Empty or omitted = the working directory itself.")] string? path = null)
+                => ListDir(path, workingDirectory),
+                name: "list_dir",
+                description: "List the contents of a directory."),
+        };
     }
 
     // --- bash ---

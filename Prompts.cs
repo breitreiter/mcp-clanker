@@ -18,6 +18,14 @@ public static class Prompts
         return template.Replace(ContractToken, contract.RawMarkdown);
     }
 
+    public static string LoadCloseoutPrompt()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "Prompts", "closeout.md");
+        if (!File.Exists(path))
+            throw new FileNotFoundException($"Closeout prompt template not found at {path}.");
+        return File.ReadAllText(path);
+    }
+
     static string LoadTemplate(string? providerName)
     {
         var promptsDir = Path.Combine(AppContext.BaseDirectory, "Prompts");

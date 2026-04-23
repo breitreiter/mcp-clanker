@@ -235,6 +235,28 @@ public static class Executor
                     Console.Error.WriteLine($"[mcp-clanker] self-check phase failed: {ex.GetType().Name}: {ex.Message}");
                 }
             }
+
+            // Closeout phase (v2-plan Phase 5): independent verification.
+            // Fresh context, diff-only input, read-only tools, same model.
+            // Overrides the self-report's acceptance[] and, if any verdict
+            // is fail, demotes the terminal state to failure. See
+            // RunCloseoutAsync for the full flow. Only runs on success —
+            // nothing to verify on other terminal states.
+            if (terminal == TerminalState.Success)
+            {
+                try
+                {
+                    var (closeoutTokensIn, closeoutTokensOut, closeoutTurns) =
+                        await RunCloseoutAsync(chat, contract, state, workingDirectory, trace, turnCount, ct);
+                    tokensIn += closeoutTokensIn;
+                    tokensOut += closeoutTokensOut;
+                    turnCount += closeoutTurns;
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[mcp-clanker] closeout phase failed: {ex.GetType().Name}: {ex.Message}");
+                }
+            }
         }
         finally
         {
@@ -257,7 +279,30 @@ public static class Executor
 
         var scopeAdherence = CheckScopeAdherence(contract, filesChanged);
         var estimatedCost = Pricing.Estimate(modelName, tokensIn, tokensOut);
-        var acceptance = BuildAcceptanceChecks(state.AcceptanceReports);
+
+        // Closeout result OVERRIDES self-report acceptance when present.
+        // Self-report remains in the trace for forensics but doesn't make
+        // it to the POW JSON — independent verification is authoritative.
+        var acceptanceSource = state.CloseoutReports ?? state.AcceptanceReports;
+        var acceptance = BuildAcceptanceChecks(acceptanceSource);
+
+        // If closeout flipped any item to fail, demote terminal state.
+        // Success is reserved for "passed independent verification"; a
+        // failed closeout can always be second-guessed by the parent
+        // after reading the trace. Unknown alone doesn't demote.
+        if (state.CloseoutReports is { Count: > 0 }
+            && acceptance.Any(a => a.Status == AcceptanceStatus.Fail)
+            && terminal == TerminalState.Success)
+        {
+            var failed = acceptance.Where(a => a.Status == AcceptanceStatus.Fail).Count();
+            var total = acceptance.Count;
+            terminal = TerminalState.Failure;
+            notes = string.IsNullOrEmpty(notes)
+                ? $"Closeout verdict: {failed} of {total} acceptance items failed independent verification. See acceptance[] and sub_agents_spawned[] for details."
+                : $"{notes}\n\nCloseout verdict: {failed} of {total} acceptance items failed independent verification.";
+        }
+
+        var subAgents = BuildSubAgentResults(state.CloseoutReports, state.CloseoutNotes);
 
         return new BuildResult(
             TaskId: contract.TaskId,
@@ -273,7 +318,7 @@ public static class Executor
             ScopeAdherence: scopeAdherence,
             Tests: null,
             Acceptance: acceptance,
-            SubAgentsSpawned: Array.Empty<SubAgentResult>(),
+            SubAgentsSpawned: subAgents,
             Notes: notes,
             BlockedQuestion: blocked,
             RejectionReason: null,
@@ -447,4 +492,255 @@ public static class Executor
         "fail" or "failed" or "false" => AcceptanceStatus.Fail,
         _ => AcceptanceStatus.Unknown,
     };
+
+    // v2-plan Phase 5: closeout reviewer. Fresh-context sub-agent with
+    // read-only tools (read_file / grep / list_dir) and a closeout-scoped
+    // finish_work that writes to state.CloseoutReports. The reviewer is
+    // handed the contract's acceptance bullets, the executor's self-report
+    // for reference, and the worktree diff. Runs its own bounded tool-call
+    // loop until it calls finish_work or hits the budget.
+    //
+    // Same-model-by-default per v2-plan — reuses the passed-in IChatClient.
+    // A future extension could route closeout to a different model; for v1
+    // cost-efficiency we pick the same one.
+    static async Task<(long TokensIn, long TokensOut, int Turns)> RunCloseoutAsync(
+        IChatClient chat,
+        Contract contract,
+        ExecutorState state,
+        string workingDirectory,
+        TraceWriter trace,
+        int priorTurnCount,
+        CancellationToken ct)
+    {
+        const int CloseoutToolBudget = 20;
+
+        var diff = CaptureWorktreeDiff(workingDirectory);
+
+        var readOnlyTools = Tools.CreateReadOnly(workingDirectory);
+        var closeoutFinish = AIFunctionFactory.Create(
+            (List<AcceptanceReport> reports, string? notes) =>
+            {
+                state.CloseoutReports = reports;
+                state.CloseoutNotes = notes;
+                return $"Recorded {reports.Count} closeout verdict(s). Review complete.";
+            },
+            name: "finish_work",
+            description: """
+                Record your independent verdicts for the contract's Acceptance bullets
+                and complete the review. Call exactly once when you are confident in
+                each verdict.
+                  - reports: one entry per Acceptance bullet with { item, status, citation }.
+                    status is "pass" | "fail" | "unknown".
+                    citation MUST anchor in the current worktree state: a file:line from
+                    read_file output, a grep match, or a diff hunk. Do NOT cite the
+                    executor's own tool calls — verify independently.
+                  - notes: optional brief summary of the review (patterns, concerns,
+                    anything a parent should know that doesn't fit in an individual
+                    citation). Plain prose.
+                """);
+
+        var tools = new List<AITool>(readOnlyTools) { closeoutFinish };
+
+        var options = new ChatOptions
+        {
+            MaxOutputTokens = 16384,
+            Tools = tools,
+            // Not RequireAny — model may need several read_file / grep calls
+            // before it's ready to call finish_work. Rely on the prompt and
+            // the budget cap.
+        };
+
+        var history = new List<ChatMessage>
+        {
+            new(ChatRole.System, Prompts.LoadCloseoutPrompt()),
+            new(ChatRole.User, BuildCloseoutPrompt(contract, state.AcceptanceReports, diff)),
+        };
+
+        long tokensIn = 0;
+        long tokensOut = 0;
+        int turns = 0;
+        int toolCalls = 0;
+
+        while (true)
+        {
+            if (toolCalls >= CloseoutToolBudget)
+            {
+                Console.Error.WriteLine($"[mcp-clanker] closeout hit tool-call budget ({CloseoutToolBudget}) without calling finish_work.");
+                break;
+            }
+
+            turns++;
+            var turnNumber = priorTurnCount + turns;
+            var turnStart = Stopwatch.GetTimestamp();
+            ChatResponse response;
+            try
+            {
+                response = await chat.GetResponseAsync(history, options, ct);
+            }
+            catch (Exception ex)
+            {
+                var turnMs = (long)Stopwatch.GetElapsedTime(turnStart).TotalMilliseconds;
+                trace.WriteTurn(turnNumber, turnMs, null, null, $"exception:{ex.GetType().Name}", false, null);
+                throw;
+            }
+            var turnDuration = (long)Stopwatch.GetElapsedTime(turnStart).TotalMilliseconds;
+
+            tokensIn += response.Usage?.InputTokenCount ?? 0;
+            tokensOut += response.Usage?.OutputTokenCount ?? 0;
+
+            foreach (var m in response.Messages) history.Add(m);
+
+            var calls = response.Messages
+                .SelectMany(m => m.Contents)
+                .OfType<FunctionCallContent>()
+                .ToList();
+
+            trace.WriteTurn(
+                turnNumber,
+                turnDuration,
+                response.Usage?.InputTokenCount,
+                response.Usage?.OutputTokenCount,
+                response.FinishReason?.ToString(),
+                hadToolCalls: calls.Count > 0,
+                text: response.Text);
+
+            if (calls.Count == 0)
+            {
+                // Model finished without calling finish_work. Try once to nudge.
+                if (state.CloseoutReports is null)
+                {
+                    history.Add(new ChatMessage(ChatRole.User,
+                        "You haven't called finish_work yet. Call it now with your per-bullet verdicts. This is your only remaining action."));
+                    continue;
+                }
+                break;
+            }
+
+            var results = new List<AIContent>();
+            foreach (var call in calls)
+            {
+                if (toolCalls >= CloseoutToolBudget) break;
+
+                var callStart = Stopwatch.GetTimestamp();
+                var result = await InvokeTool(tools, call, ct);
+                var callMs = (long)Stopwatch.GetElapsedTime(callStart).TotalMilliseconds;
+                var isError = result.StartsWith("ERROR:", StringComparison.Ordinal);
+
+                trace.WriteToolCall(
+                    turn: turnNumber,
+                    callId: call.CallId,
+                    name: call.Name,
+                    args: call.Arguments,
+                    success: !isError,
+                    durationMs: callMs,
+                    resultPreview: TraceWriter.Preview(result, isError: false),
+                    error: isError ? TraceWriter.Preview(result, isError: true) : null);
+
+                results.Add(new FunctionResultContent(call.CallId, result));
+                toolCalls++;
+                state.ToolCallCount++;
+            }
+
+            history.Add(new ChatMessage(ChatRole.Tool, results));
+
+            if (state.CloseoutReports is not null)
+                break;
+        }
+
+        return (tokensIn, tokensOut, turns);
+    }
+
+    static string BuildCloseoutPrompt(Contract contract, List<AcceptanceReport>? selfReport, string diff)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("## Contract goal");
+        sb.AppendLine(contract.Goal);
+        sb.AppendLine();
+        sb.AppendLine("## Acceptance bullets (verify each)");
+        for (int i = 0; i < contract.Acceptance.Count; i++)
+            sb.Append(i + 1).Append(". ").AppendLine(contract.Acceptance[i]);
+        sb.AppendLine();
+
+        if (selfReport is { Count: > 0 })
+        {
+            sb.AppendLine("## Executor's self-report (for reference only — verify independently)");
+            foreach (var r in selfReport)
+            {
+                sb.Append("- [").Append(r.Status).Append("] ").AppendLine(r.Item);
+                if (!string.IsNullOrWhiteSpace(r.Citation))
+                    sb.Append("  cited: ").AppendLine(r.Citation);
+            }
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("## Diff of uncommitted changes in the worktree");
+        sb.AppendLine("```diff");
+        sb.AppendLine(string.IsNullOrWhiteSpace(diff) ? "(empty diff — no changes detected)" : diff.TrimEnd());
+        sb.AppendLine("```");
+        sb.AppendLine();
+        sb.AppendLine("Review the diff against each Acceptance bullet. Use read_file / grep / list_dir to confirm current worktree state where needed. Call finish_work with your verdicts. Each citation must anchor in a fact you can point at (file:line, grep match, diff hunk) — not in the executor's own tool calls.");
+
+        return sb.ToString();
+    }
+
+    // Capture executor's uncommitted changes, including new (untracked) files.
+    // `git add -N .` marks new files as intent-to-add so `git diff HEAD`
+    // sees them. Side effect on the worktree's index is intentional and
+    // harmless — the worktree is ephemeral.
+    static string CaptureWorktreeDiff(string workingDirectory, int maxBytes = 32 * 1024)
+    {
+        try
+        {
+            RunGit(workingDirectory, "add", "-N", ".");
+            var diff = RunGit(workingDirectory, "diff", "HEAD");
+            if (diff.Length <= maxBytes) return diff;
+            return diff[..maxBytes] + $"\n\n[diff truncated at {maxBytes} bytes of {diff.Length} total]\n";
+        }
+        catch (Exception ex)
+        {
+            return $"[diff capture failed: {ex.GetType().Name}: {ex.Message}]";
+        }
+    }
+
+    static string RunGit(string cwd, params string[] args)
+    {
+        using var proc = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "git",
+                WorkingDirectory = cwd,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            },
+        };
+        foreach (var a in args) proc.StartInfo.ArgumentList.Add(a);
+        proc.Start();
+        var stdout = proc.StandardOutput.ReadToEnd();
+        var stderr = proc.StandardError.ReadToEnd();
+        proc.WaitForExit();
+        if (proc.ExitCode != 0)
+            throw new InvalidOperationException($"git {string.Join(' ', args)} failed (exit {proc.ExitCode}): {stderr.Trim()}");
+        return stdout;
+    }
+
+    static IReadOnlyList<SubAgentResult> BuildSubAgentResults(List<AcceptanceReport>? closeoutReports, string? closeoutNotes)
+    {
+        if (closeoutReports is null || closeoutReports.Count == 0)
+            return Array.Empty<SubAgentResult>();
+
+        var anyFail = closeoutReports.Any(r => ParseAcceptanceStatus(r.Status) == AcceptanceStatus.Fail);
+        var anyUnknown = closeoutReports.Any(r => ParseAcceptanceStatus(r.Status) == AcceptanceStatus.Unknown);
+        var verdict = anyFail ? "fail" : (anyUnknown ? "mixed" : "pass");
+
+        return new[]
+        {
+            new SubAgentResult(
+                Role: "closeout",
+                Verdict: verdict,
+                Notes: closeoutNotes ?? ""),
+        };
+    }
 }

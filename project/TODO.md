@@ -101,7 +101,7 @@ Small quality fixes to bring our bash/read_file closer to nb's shape, from a dif
 
 ## v2 deferred
 
-- **Closeout sub-agent.** Diff-only input, read-only tools, same-model-by-default, evidence-forced findings. Codex reviewer pattern. See `executor-v1-research.md` § "v2 closeout: mirror Codex's reviewer pattern".
+- ~~**Closeout sub-agent.** Diff-only input, read-only tools, same-model-by-default, evidence-forced findings. Codex reviewer pattern. See `executor-v1-research.md` § "v2 closeout: mirror Codex's reviewer pattern".~~ *(done 2026-04-23 — v2-plan Phase 5 code shipped. `RunCloseoutAsync` in Executor.cs runs after self-check on terminal=success: fresh history (not executor's), read-only tool surface via `Tools.CreateReadOnly`, a closeout-scoped `finish_work` writing to `state.CloseoutReports`, tool-call budget of 20, prompt in `Prompts/closeout.md`. Diff captured via `git add -N .` + `git diff HEAD` (captures untracked new files), truncated at 32 KB. Schema semantics: closeout's reports OVERRIDE Phase 4's `acceptance[]` when present; any `fail` verdict demotes terminal from `success` to `failure` with a note in `notes`. `sub_agents_spawned[]` gets a single entry `{role:closeout, verdict:pass|mixed|fail, notes:closeout's-free-text-summary}`. End-to-end validation pending via adversarial contract where executor ships incomplete work.)*
 - **Spawn tool / sub-agents.** Fan-out, not pipeline. `max_depth=2` per brief. Fresh context per spawn.
 - **Repo map generator.** Static analysis + cached one-liners. Seeded into system prompt for orientation.
 - **Session resume.** Restart from `<task-id>.state.json` sidecar. Needs at least one real failure-mode before we design against it.
