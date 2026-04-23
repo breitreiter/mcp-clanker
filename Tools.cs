@@ -15,18 +15,34 @@ namespace McpClanker;
 
 public class ExecutorState
 {
+    // Cap on how far back the doom-loop detector can look. Larger than any
+    // current detection threshold (M=5) so the detector always has enough
+    // history to work with, while keeping the buffer tiny.
+    const int RecentCallsCapacity = 10;
+
     public int ToolCallCount { get; set; }
     public Dictionary<string, FileAction> FilesTouched { get; } = new();
 
-    // Set by any tool that detects a safety-gate violation (e.g. bash command
-    // matching a danger pattern). Executor checks this after each tool-call
-    // batch and terminates the run as blocked if present. Only the first
-    // breach wins — a safety breach is terminal, not advisory.
+    readonly List<ToolCallRecord> _recentCalls = new();
+    public IReadOnlyList<ToolCallRecord> RecentCalls => _recentCalls;
+
+    // Set by any tool or detector that detects a safety-gate violation
+    // (bash command matching a danger pattern, network-egress trigger,
+    // doom-loop). Executor checks this after each tool-call batch and
+    // terminates the run as blocked if present. Only the first breach
+    // wins — a safety breach is terminal, not advisory.
     public SafetyBreach? SafetyBreach { get; private set; }
 
     public void FlagSafetyBreach(SafetyBreach breach)
     {
         SafetyBreach ??= breach;
+    }
+
+    public void RecordToolCall(ToolCallRecord record)
+    {
+        _recentCalls.Add(record);
+        if (_recentCalls.Count > RecentCallsCapacity)
+            _recentCalls.RemoveAt(0);
     }
 
     public void RecordWrite(string relativePath, bool existedBefore)
@@ -37,6 +53,8 @@ public class ExecutorState
 }
 
 public record SafetyBreach(BlockedCategory Category, string Summary, string OffendingInput);
+
+public record ToolCallRecord(string Name, string ArgsSignature, bool Success);
 
 public static class Tools
 {

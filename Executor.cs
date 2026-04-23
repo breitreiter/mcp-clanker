@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using Microsoft.Extensions.AI;
 
 namespace McpClanker;
@@ -7,8 +8,7 @@ namespace McpClanker;
 // makes, append results to history, repeat. Terminate when the model stops
 // calling tools or the tool-call budget is hit.
 //
-// Deliberately minimal for v1 — no doom-loop detector, no whitelist, no
-// retry, no closeout. Those land in v1.5 and v2 once this end-to-end works.
+// Deliberately minimal for v1 — no retry, no closeout. Those land in v2.
 //
 // Emits an append-only JSONL trace to traceDirectory/trace.jsonl as events
 // happen. Trace is forensic-grade (read it when proof-of-work isn't enough
@@ -171,13 +171,37 @@ public static class Executor
 
                     results.Add(new FunctionResultContent(call.CallId, result));
                     state.ToolCallCount++;
+
+                    // Record for doom-loop detection. Full serialized args
+                    // as the signature (no hashing) — we cap at 10 records,
+                    // so memory is trivial and equality is exact.
+                    var argsSignature = call.Arguments is null
+                        ? "{}"
+                        : JsonSerializer.Serialize(call.Arguments);
+                    state.RecordToolCall(new ToolCallRecord(call.Name, argsSignature, Success: !isError));
                 }
 
                 history.Add(new ChatMessage(ChatRole.Tool, results));
 
-                // A safety gate (currently: CommandClassifier on bash) can flag
-                // a breach during tool dispatch. When flagged, terminate the
-                // whole run as blocked — safety breaches aren't recoverable
+                // Run the doom-loop detector over the most recent calls.
+                // Pre-flight gates (CommandClassifier, NetworkEgressChecker)
+                // may already have flagged a breach during tool dispatch;
+                // only run the loop detector if the batch survived those.
+                if (state.SafetyBreach is null)
+                {
+                    var doomLoop = DoomLoopDetector.Check(state.RecentCalls);
+                    if (doomLoop.Tripped)
+                    {
+                        state.FlagSafetyBreach(new SafetyBreach(
+                            Category: BlockedCategory.Abandon,
+                            Summary: $"Doom-loop detected: {doomLoop.Reason}.",
+                            OffendingInput: doomLoop.OffendingInput ?? ""));
+                    }
+                }
+
+                // A safety gate (pre-flight or doom-loop) can flag a breach
+                // during tool dispatch. When flagged, terminate the whole
+                // run as blocked — safety breaches aren't recoverable
                 // inside the same contract.
                 if (state.SafetyBreach is { } breach)
                 {
