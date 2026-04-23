@@ -24,6 +24,11 @@ public class ExecutorState
     public Dictionary<string, FileAction> FilesTouched { get; } = new();
     public TodoManager Todos { get; } = new();
 
+    // Populated by the `finish_work` tool during the self-check phase.
+    // Null if the phase never ran (non-success terminal) or if the model
+    // skipped the finish_work call even after the nudge.
+    public List<AcceptanceReport>? AcceptanceReports { get; set; }
+
     readonly List<ToolCallRecord> _recentCalls = new();
     public IReadOnlyList<ToolCallRecord> RecentCalls => _recentCalls;
 
@@ -56,6 +61,12 @@ public class ExecutorState
 public record SafetyBreach(BlockedCategory Category, string Summary, string OffendingInput);
 
 public record ToolCallRecord(string Name, string ArgsSignature, bool Success);
+
+// Shape accepted by the `finish_work` tool during the self-check phase.
+// Citation is the honesty-enforcement knob — the model must point at
+// something concrete (file:line, tool-call summary, diff reference) so
+// its verdict isn't pure assertion.
+public record AcceptanceReport(string Item, string Status, string Citation);
 
 public static class Tools
 {

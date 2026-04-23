@@ -213,6 +213,28 @@ public static class Executor
                     break;
                 }
             }
+
+            // Self-check phase: only on clean success. One extra model turn
+            // with a finish_work-only tool list, asking the model to report
+            // per-bullet verdicts with citations. Populates
+            // BuildResult.Acceptance. See v2-plan phase 4. Self-check
+            // failure is logged but doesn't demote the terminal state —
+            // the main work already ran cleanly.
+            if (terminal == TerminalState.Success)
+            {
+                try
+                {
+                    var (selfCheckTokensIn, selfCheckTokensOut) = await RunSelfCheckAsync(
+                        chat, history, contract, state, trace, turnCount, ct);
+                    tokensIn += selfCheckTokensIn;
+                    tokensOut += selfCheckTokensOut;
+                    turnCount++;
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[mcp-clanker] self-check phase failed: {ex.GetType().Name}: {ex.Message}");
+                }
+            }
         }
         finally
         {
@@ -235,6 +257,7 @@ public static class Executor
 
         var scopeAdherence = CheckScopeAdherence(contract, filesChanged);
         var estimatedCost = Pricing.Estimate(modelName, tokensIn, tokensOut);
+        var acceptance = BuildAcceptanceChecks(state.AcceptanceReports);
 
         return new BuildResult(
             TaskId: contract.TaskId,
@@ -249,7 +272,7 @@ public static class Executor
             FilesChanged: filesChanged,
             ScopeAdherence: scopeAdherence,
             Tests: null,
-            Acceptance: Array.Empty<AcceptanceCheck>(),
+            Acceptance: acceptance,
             SubAgentsSpawned: Array.Empty<SubAgentResult>(),
             Notes: notes,
             BlockedQuestion: blocked,
@@ -293,4 +316,135 @@ public static class Executor
             return $"ERROR: tool '{call.Name}' threw: {ex.GetType().Name}: {ex.Message}";
         }
     }
+
+    // One-turn self-check. Called after the main loop terminates with success.
+    // Exposes only the `finish_work` tool; the model is asked to call it once
+    // with per-bullet verdicts and citations. Returns (tokensIn, tokensOut)
+    // so the outer method can roll them into the run totals. The collected
+    // reports land on ExecutorState.AcceptanceReports — callers read from
+    // there rather than from this method's return value.
+    static async Task<(long TokensIn, long TokensOut)> RunSelfCheckAsync(
+        IChatClient chat,
+        List<ChatMessage> history,
+        Contract contract,
+        ExecutorState state,
+        TraceWriter trace,
+        int turnCount,
+        CancellationToken ct)
+    {
+        var finishWork = AIFunctionFactory.Create(
+            (List<AcceptanceReport> reports) =>
+            {
+                state.AcceptanceReports = reports;
+                return $"Recorded {reports.Count} acceptance report(s).";
+            },
+            name: "finish_work",
+            description: """
+                Record verdicts for the contract's Acceptance bullets and terminate the run.
+                Call exactly once with `reports`, one entry per Acceptance bullet:
+                  - item: the acceptance bullet verbatim (or lightly summarized).
+                  - status: "pass" | "fail" | "unknown".
+                  - citation: a specific file:line, tool-call summary, or diff reference
+                    that justifies the status. "I believe so" is not a valid citation.
+                """);
+
+        var options = new ChatOptions
+        {
+            MaxOutputTokens = 16384,
+            Tools = new List<AITool> { finishWork },
+            ToolMode = ChatToolMode.RequireAny,
+        };
+
+        var prompt = BuildSelfCheckPrompt(contract.Acceptance);
+        history.Add(new ChatMessage(ChatRole.User, prompt));
+
+        var selfTurn = turnCount + 1;
+        var started = Stopwatch.GetTimestamp();
+        ChatResponse response;
+        try
+        {
+            response = await chat.GetResponseAsync(history, options, ct);
+        }
+        catch (Exception ex)
+        {
+            var ms = (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            trace.WriteTurn(selfTurn, ms, null, null, $"exception:{ex.GetType().Name}", false, null);
+            throw;
+        }
+
+        var duration = (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+
+        foreach (var m in response.Messages)
+            history.Add(m);
+
+        var calls = response.Messages
+            .SelectMany(m => m.Contents)
+            .OfType<FunctionCallContent>()
+            .ToList();
+
+        trace.WriteTurn(
+            selfTurn,
+            duration,
+            response.Usage?.InputTokenCount,
+            response.Usage?.OutputTokenCount,
+            response.FinishReason?.ToString(),
+            hadToolCalls: calls.Count > 0,
+            text: response.Text);
+
+        foreach (var call in calls)
+        {
+            var callStart = Stopwatch.GetTimestamp();
+            var result = await InvokeTool(options.Tools!, call, ct);
+            var callMs = (long)Stopwatch.GetElapsedTime(callStart).TotalMilliseconds;
+            var isError = result.StartsWith("ERROR:", StringComparison.Ordinal);
+            trace.WriteToolCall(
+                turn: selfTurn,
+                callId: call.CallId,
+                name: call.Name,
+                args: call.Arguments,
+                success: !isError,
+                durationMs: callMs,
+                resultPreview: TraceWriter.Preview(result, isError: false),
+                error: isError ? TraceWriter.Preview(result, isError: true) : null);
+            state.ToolCallCount++;
+        }
+
+        return (response.Usage?.InputTokenCount ?? 0, response.Usage?.OutputTokenCount ?? 0);
+    }
+
+    static string BuildSelfCheckPrompt(IReadOnlyList<string> acceptance)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("Execution is complete. Before we finish, verify the contract's Acceptance bullets.");
+        sb.AppendLine();
+        sb.AppendLine("Call `finish_work` exactly once with a `reports` array — one entry per bullet below. Each report needs:");
+        sb.AppendLine("  - item: the bullet text (verbatim or lightly summarized).");
+        sb.AppendLine("  - status: \"pass\" | \"fail\" | \"unknown\".");
+        sb.AppendLine("  - citation: a specific file:line, tool-call summary, or diff reference. Not \"I believe so\".");
+        sb.AppendLine();
+        sb.AppendLine("Acceptance bullets:");
+        for (int i = 0; i < acceptance.Count; i++)
+            sb.Append("  ").Append(i + 1).Append(". ").AppendLine(acceptance[i]);
+        sb.AppendLine();
+        sb.AppendLine("Call finish_work now. Do not call any other tool.");
+        return sb.ToString();
+    }
+
+    static IReadOnlyList<AcceptanceCheck> BuildAcceptanceChecks(List<AcceptanceReport>? reports)
+    {
+        if (reports is null) return Array.Empty<AcceptanceCheck>();
+        return reports
+            .Select(r => new AcceptanceCheck(
+                Item: r.Item,
+                Status: ParseAcceptanceStatus(r.Status),
+                Citation: r.Citation ?? ""))
+            .ToList();
+    }
+
+    static AcceptanceStatus ParseAcceptanceStatus(string? s) => s?.Trim().ToLowerInvariant() switch
+    {
+        "pass" or "passed" or "ok" or "true" => AcceptanceStatus.Pass,
+        "fail" or "failed" or "false" => AcceptanceStatus.Fail,
+        _ => AcceptanceStatus.Unknown,
+    };
 }

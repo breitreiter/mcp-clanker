@@ -59,7 +59,7 @@ the top when it's time to do more.
 - "Turn 1: model said X, called bash(ls), result was Y (truncated)..."
 - For the ~5% of runs where something's weird and the human needs to read
 
-**8. Light acceptance self-check.**
+**8. Light acceptance self-check.** *(done 2026-04-23 — v2-plan Phase 4. One extra model turn after the main loop terminates with `success`. Only the new `finish_work` tool is exposed during this phase; `ToolMode=RequireAny` forces the model to call it. Tool takes `reports: List<{item, status, citation}>`; reports land on `ExecutorState.AcceptanceReports` and populate `BuildResult.Acceptance[]`. New schema: `AcceptanceCheck` now carries `Citation` too — the honesty-enforcement hook. If the model skips `finish_work` somehow, fall back to empty Acceptance[] without demoting the terminal state. Cost: one extra short turn per successful run (~$0.005). End-to-end validation pending via an adversarial contract where an acceptance item is deliberately left unmet.)*
 - One terminal-time model turn: "for each acceptance item, pass/fail with citation to a specific line/file in the diff"
 - Cheap; gives *some* quality signal before v2's full closeout sub-agent lands
 - Model can still bluff but has to point at something specific

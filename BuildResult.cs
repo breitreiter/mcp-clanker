@@ -50,7 +50,8 @@ public record TestsReport(
 
 public record AcceptanceCheck(
     [property: JsonPropertyName("item")] string Item,
-    [property: JsonPropertyName("status")] AcceptanceStatus Status);
+    [property: JsonPropertyName("status")] AcceptanceStatus Status,
+    [property: JsonPropertyName("citation")] string Citation);
 
 public record SubAgentResult(
     [property: JsonPropertyName("role")] string Role,
