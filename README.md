@@ -176,12 +176,18 @@ mcp-clanker/
 ├── skills/clanker.md       # Claude Code skill — install to ~/.claude/skills/
 ├── appsettings.example.json
 ├── CLAUDE.md               # developer notes (build gotchas, conventions)
+├── docs/                   # mechanical reference — architecture + file formats
 └── project/                # design docs + rolling TODO
 ```
 
 ## Documentation
 
-Design decisions and roadmap live under `project/`:
+Mechanical reference — how the pieces move, what the file formats are — lives under `docs/`:
+
+- `docs/architecture.md` — request lifecycle, phases, state, tool plane, safety architecture, extension points
+- `docs/formats.md` — contract markdown, proof-of-work JSON, JSONL trace, markdown transcript
+
+Design decisions and roadmap — the "why" — live under `project/`:
 
 - `BRIEF.md` — original design doc; the framing that seeded the repo
 - `executor-v1-research.md` — v1 design decisions with source citations
