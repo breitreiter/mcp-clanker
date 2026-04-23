@@ -131,7 +131,12 @@ public sealed class TraceWriter : IDisposable
 
     static bool IsMutationOrCommand(string toolName) => toolName switch
     {
+        // Mutations: we want full args for forensics (what did it try to write).
         "write_file" or "edit_file" or "apply_patch" or "bash" => true,
+        // `finish_work` isn't a mutation but its args ARE load-bearing —
+        // they carry the self-check / closeout verdicts. Logging the hash
+        // only loses the content we most want to debug.
+        "finish_work" => true,
         _ => false,
     };
 

@@ -71,7 +71,7 @@ The worktree is on a branch `contract/T-NNN`. It is not automatically cleaned up
 Shape (see `template://proof-of-work` for full schema). Check in this order:
 
 1. **`terminal_state`**: `success` | `failure` | `rejected` | `blocked`.
-   - `success` — executor completed without asking a question. Does not mean the work is correct; v1 has no closeout verification. Eyeball the diff.
+   - `success` — executor completed AND an independent closeout reviewer verified every Acceptance bullet. `acceptance[]` carries closeout's verdicts with citations; `sub_agents_spawned[]` has a `{role: closeout, verdict: pass|mixed|fail}` entry.
    - `failure` — executor gave up after tool-call budget or similar.
    - `rejected` — contract is structurally wrong (missing section, scope file doesn't exist). See `rejection_reason`.
    - `blocked` — executor hit something it couldn't resolve. See `blocked_question`.
@@ -121,13 +121,13 @@ When in doubt: if a task is on the boundary between "delegate" and "do in-contex
 
 Keep these in mind when interpreting results:
 
-- **No closeout verification.** `acceptance[]` is empty. Success state is self-reported.
-- **No safety gates.** The executor has `bash` with no command classifier, no network-egress check, no doom-loop detector. Contracts should not ask for destructive or network-bound work until v2 ships.
-- **No sandbox.** Executor runs on the host in a git worktree. Home directory is reachable.
-- **Limited toolset.** `bash`, `read_file`, `write_file`, `edit_file` only. No `grep`, `list_dir`, `todo_*`, `apply_patch` yet.
+- **Closeout reviewer is in.** `acceptance[]` is populated by an independent read-only reviewer after success runs. A `success` terminal means the reviewer passed every bullet; `failure` after closeout means the reviewer caught something — parent can second-guess by reading the trace and the closeout citations.
+- **Safety gates are in.** Danger-pattern (`rm -rf`, `sudo`, etc.), network-egress (`curl`/`wget`/`gh api` without localhost exemption), and doom-loop (3× same tool-args or 5 consecutive failures) detectors will block with the right `blocked_question.category`. Contracts that genuinely need network don't yet have a declaration mechanism — coming.
+- **No sandbox yet.** Executor runs on the host in a git worktree. Home directory is reachable in principle; safety gates cover the common cases.
+- **Toolset:** `bash`, `read_file`, `write_file`, `apply_patch`, `grep`, `list_dir`, `todo_read`, `todo_write`. Prefer `apply_patch` for edits when running GPT-family.
 - **Manual cleanup.** Worktrees and branches are not auto-removed.
 - **`retry_count` is always 0.** In-loop retries not yet implemented.
-- **STUB handlers.** `list_tasks`, `get_contract`, `get_log`, `validate_contract`, `update_contract` all return stub strings. Work with contract files directly.
+- **Handlers are real.** `list_tasks`, `get_contract`, `get_log`, `validate_contract`, `update_contract` all work; see the MCP surface table at the top.
 
 ## Quick reference
 

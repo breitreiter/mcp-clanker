@@ -256,6 +256,21 @@ public static class Executor
                 {
                     Console.Error.WriteLine($"[mcp-clanker] closeout phase failed: {ex.GetType().Name}: {ex.Message}");
                 }
+
+                // Apply closeout's demotion BEFORE the finally block writes
+                // the end event — otherwise the trace records pre-demotion
+                // terminal_state and the rendered transcript shows "success"
+                // while the POW reports "failure." Keep the decision here so
+                // trace / transcript / POW all agree on the final state.
+                if (state.CloseoutReports is { Count: > 0 }
+                    && state.CloseoutReports.Any(r => ParseAcceptanceStatus(r.Status) == AcceptanceStatus.Fail))
+                {
+                    var failed = state.CloseoutReports.Count(r => ParseAcceptanceStatus(r.Status) == AcceptanceStatus.Fail);
+                    var total = state.CloseoutReports.Count;
+                    terminal = TerminalState.Failure;
+                    var demotionNote = $"Closeout verdict: {failed} of {total} acceptance items failed independent verification. See acceptance[] and sub_agents_spawned[] for details.";
+                    notes = string.IsNullOrEmpty(notes) ? demotionNote : $"{notes}\n\n{demotionNote}";
+                }
             }
         }
         finally
@@ -283,25 +298,10 @@ public static class Executor
         // Closeout result OVERRIDES self-report acceptance when present.
         // Self-report remains in the trace for forensics but doesn't make
         // it to the POW JSON — independent verification is authoritative.
+        // Terminal demotion on closeout-fail already happened inline above
+        // so trace / transcript / POW agree on terminal_state.
         var acceptanceSource = state.CloseoutReports ?? state.AcceptanceReports;
         var acceptance = BuildAcceptanceChecks(acceptanceSource);
-
-        // If closeout flipped any item to fail, demote terminal state.
-        // Success is reserved for "passed independent verification"; a
-        // failed closeout can always be second-guessed by the parent
-        // after reading the trace. Unknown alone doesn't demote.
-        if (state.CloseoutReports is { Count: > 0 }
-            && acceptance.Any(a => a.Status == AcceptanceStatus.Fail)
-            && terminal == TerminalState.Success)
-        {
-            var failed = acceptance.Where(a => a.Status == AcceptanceStatus.Fail).Count();
-            var total = acceptance.Count;
-            terminal = TerminalState.Failure;
-            notes = string.IsNullOrEmpty(notes)
-                ? $"Closeout verdict: {failed} of {total} acceptance items failed independent verification. See acceptance[] and sub_agents_spawned[] for details."
-                : $"{notes}\n\nCloseout verdict: {failed} of {total} acceptance items failed independent verification.";
-        }
-
         var subAgents = BuildSubAgentResults(state.CloseoutReports, state.CloseoutNotes);
 
         return new BuildResult(
