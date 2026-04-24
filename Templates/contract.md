@@ -27,4 +27,8 @@
 - This task does NOT do X (that's T-NNN).
 - This task does NOT do Y.
 
+**Allowed network:** *(optional — omit unless the task genuinely needs network)*
+- example.com — fetching the spec used to drive code generation
+- pkg.example.org — package-manager refresh
+
 **Depends on:** T-NNN, T-NNN  (or "none")

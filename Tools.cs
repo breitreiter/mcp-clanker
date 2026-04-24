@@ -29,6 +29,15 @@ public class ExecutorState
     // skipped the finish_work call even after the nudge.
     public List<AcceptanceReport>? AcceptanceReports { get; set; }
 
+    // Bullets parsed from the contract's optional `**Allowed network:**`
+    // section. Non-empty means the contract author has consciously declared
+    // that this run needs network access — the soft egress gate (regex over
+    // bash commands) stands aside in that case. The list contents are
+    // documentary intent for human readers; the gate doesn't try to validate
+    // commands against specific hostnames. Docker `--network=none` (when the
+    // sandbox is enabled) is the strong layer and is unaffected by this flag.
+    public IReadOnlyList<string> AllowedNetwork { get; set; } = Array.Empty<string>();
+
     // Populated by the `finish_work` tool during the closeout phase. Closeout
     // is an independent review (fresh context, diff-only input, read-only
     // tools); if it runs and reports, its verdicts OVERRIDE AcceptanceReports
@@ -255,14 +264,21 @@ public static class Tools
             return $"ERROR: command blocked by safety gate: {danger.Reason}. This run will terminate.";
         }
 
-        var egress = NetworkEgressChecker.Check(command);
-        if (egress.IsBlocked)
+        // Soft egress gate stands aside when the contract has declared
+        // `**Allowed network:**`. The Docker `--network=none` wall (when
+        // the sandbox is in Docker mode) is the structural backstop — this
+        // gate is just to catch commands a contract author didn't anticipate.
+        if (state.AllowedNetwork.Count == 0)
         {
-            state.FlagSafetyBreach(new SafetyBreach(
-                Category: BlockedCategory.RescopeOrCapability,
-                Summary: $"Bash command blocked by network-egress gate: {egress.Reason}.",
-                OffendingInput: command));
-            return $"ERROR: command blocked by network-egress gate: {egress.Reason}. This run will terminate.";
+            var egress = NetworkEgressChecker.Check(command);
+            if (egress.IsBlocked)
+            {
+                state.FlagSafetyBreach(new SafetyBreach(
+                    Category: BlockedCategory.RescopeOrCapability,
+                    Summary: $"Bash command blocked by network-egress gate: {egress.Reason}.",
+                    OffendingInput: command));
+                return $"ERROR: command blocked by network-egress gate: {egress.Reason}. This run will terminate.";
+            }
         }
 
         using var proc = BuildBashProcess(command, cwd, sandbox);

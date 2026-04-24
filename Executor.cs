@@ -24,12 +24,16 @@ public static class Executor
         string? providerName,
         string? modelName,
         int maxToolCalls,
+        int maxOutputTokens,
         string traceDirectory,
         SandboxConfig sandbox,
         CancellationToken ct)
     {
         var startedAt = DateTime.UtcNow;
-        var state = new ExecutorState();
+        var state = new ExecutorState
+        {
+            AllowedNetwork = contract.AllowedNetwork,
+        };
         var tools = Tools.Create(workingDirectory, state, sandbox);
         var tracePath = Path.Combine(traceDirectory, "trace.jsonl");
         var transcriptPath = Path.Combine(traceDirectory, "transcript.md");
@@ -46,12 +50,11 @@ public static class Executor
         // turns but too tight for write_file of a ~200-line source file:
         // phase 2 validation run T-001 hit finish_reason=length on turn 5
         // with 4096 output tokens consumed and zero tool calls emitted.
-        // 16384 gives reasoning room + a substantial write payload without
-        // materially changing cost on the cheap executor. Config-driven
-        // sizing is follow-up work (TODO).
+        // Caller passes the per-provider value from appsettings; cheap
+        // executors want high ceilings, premium models want conservative ones.
         var options = new ChatOptions
         {
-            MaxOutputTokens = 16384,
+            MaxOutputTokens = maxOutputTokens,
             Tools = tools,
         };
 
@@ -226,7 +229,7 @@ public static class Executor
                 try
                 {
                     var (selfCheckTokensIn, selfCheckTokensOut) = await RunSelfCheckAsync(
-                        chat, history, contract, state, trace, turnCount, ct);
+                        chat, history, contract, state, trace, turnCount, maxOutputTokens, ct);
                     tokensIn += selfCheckTokensIn;
                     tokensOut += selfCheckTokensOut;
                     turnCount++;
@@ -248,7 +251,7 @@ public static class Executor
                 try
                 {
                     var (closeoutTokensIn, closeoutTokensOut, closeoutTurns) =
-                        await RunCloseoutAsync(chat, contract, state, workingDirectory, trace, turnCount, ct);
+                        await RunCloseoutAsync(chat, contract, state, workingDirectory, trace, turnCount, maxOutputTokens, ct);
                     tokensIn += closeoutTokensIn;
                     tokensOut += closeoutTokensOut;
                     turnCount += closeoutTurns;
@@ -376,6 +379,7 @@ public static class Executor
         ExecutorState state,
         TraceWriter trace,
         int turnCount,
+        int maxOutputTokens,
         CancellationToken ct)
     {
         var finishWork = AIFunctionFactory.Create(
@@ -396,7 +400,7 @@ public static class Executor
 
         var options = new ChatOptions
         {
-            MaxOutputTokens = 16384,
+            MaxOutputTokens = maxOutputTokens,
             Tools = new List<AITool> { finishWork },
             ToolMode = ChatToolMode.RequireAny,
         };
@@ -511,6 +515,7 @@ public static class Executor
         string workingDirectory,
         TraceWriter trace,
         int priorTurnCount,
+        int maxOutputTokens,
         CancellationToken ct)
     {
         const int CloseoutToolBudget = 20;
@@ -544,7 +549,7 @@ public static class Executor
 
         var options = new ChatOptions
         {
-            MaxOutputTokens = 16384,
+            MaxOutputTokens = maxOutputTokens,
             Tools = tools,
             // Not RequireAny — model may need several read_file / grep calls
             // before it's ready to call finish_work. Rely on the prompt and

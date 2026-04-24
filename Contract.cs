@@ -16,6 +16,7 @@ public record Contract(
     IReadOnlyList<ContextEntry> Context,
     IReadOnlyList<string> Acceptance,
     IReadOnlyList<string> NonGoals,
+    IReadOnlyList<string> AllowedNetwork,
     IReadOnlyList<string> DependsOn,
     string RawMarkdown);
 
@@ -76,6 +77,7 @@ public static class ContractParser
 
         var acceptance = BulletsIn(Section(markdown, "Acceptance"));
         var nonGoals = BulletsIn(Section(markdown, "Non-goals"));
+        var allowedNetwork = BulletsIn(Section(markdown, "Allowed network"));
         var contractBody = Section(markdown, "Contract") ?? "";
 
         return new Contract(
@@ -87,6 +89,7 @@ public static class ContractParser
             Context: context,
             Acceptance: acceptance,
             NonGoals: nonGoals,
+            AllowedNetwork: allowedNetwork,
             DependsOn: depends,
             RawMarkdown: markdown);
     }

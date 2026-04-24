@@ -5,9 +5,11 @@ namespace McpClanker;
 // Second safety gate: intercept bash commands that would make network calls
 // off the host. Pre-flight check mirrors CommandClassifier's shape — a pure
 // static Check returning (IsBlocked, Reason). RunBash flags state.SafetyBreach
-// with blocked_question.category=rescope_or_capability on hit; a contract
-// that genuinely needs network is expected to declare it explicitly in a
-// future **Allowed network:** section (not yet implemented — see TODO).
+// with blocked_question.category=rescope_or_capability on hit. A contract
+// that genuinely needs network must declare it via `**Allowed network:**`
+// in the contract markdown — when present, RunBash bypasses this gate
+// entirely (see Tools.RunBash). The bullets in that section are documented
+// intent for human readers, not validated against specific commands.
 //
 // Exemption: any command mentioning a localhost marker (localhost,
 // 127.0.0.1, ::1, 0.0.0.0) passes through so local dev-server testing works

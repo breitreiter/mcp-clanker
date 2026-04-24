@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -84,6 +85,10 @@ public static class BuildResultJson
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
         DictionaryKeyPolicy = JsonNamingPolicy.SnakeCaseLower,
         WriteIndented = true,
+        // Default escaping turns backticks, smart quotes, and other safe-but-non-ASCII
+        // characters into \u sequences — fine for browsers, ugly for humans reading
+        // proof-of-work in a terminal. Relaxed encoder keeps them as literals.
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower) },
     };
 

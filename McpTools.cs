@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.AI;
@@ -54,7 +55,9 @@ public static class McpTools
 
         var traceDirectory = Worktree.TraceDir(resolvedTargetRepo, contract.TaskId);
         var providerName = config["ActiveProvider"];
-        var modelName = ResolveModelName(config, providerName);
+        var providerSection = ResolveProviderSection(config, providerName);
+        var modelName = providerSection?["Model"];
+        var maxOutputTokens = ParseMaxOutputTokens(providerSection) ?? DefaultMaxOutputTokens;
         var sandbox = SandboxConfig.FromConfiguration(config);
 
         var result = await Executor.RunAsync(
@@ -65,6 +68,7 @@ public static class McpTools
             providerName: providerName,
             modelName: modelName,
             maxToolCalls: 500,
+            maxOutputTokens: maxOutputTokens,
             traceDirectory: traceDirectory,
             sandbox: sandbox,
             ct: CancellationToken.None);
@@ -72,12 +76,21 @@ public static class McpTools
         return BuildResultJson.Serialize(result);
     }
 
-    static string? ResolveModelName(IConfiguration config, string? activeProvider)
+    // Default if the active provider doesn't pin a value. Matches the prior
+    // hardcoded ceiling — see comment in Executor.RunAsync for why 16384.
+    const int DefaultMaxOutputTokens = 16384;
+
+    static IConfigurationSection? ResolveProviderSection(IConfiguration config, string? activeProvider)
     {
         if (string.IsNullOrEmpty(activeProvider)) return null;
-        var section = config.GetSection("ChatProviders").GetChildren()
+        return config.GetSection("ChatProviders").GetChildren()
             .FirstOrDefault(p => string.Equals(p["Name"], activeProvider, StringComparison.OrdinalIgnoreCase));
-        return section?["Model"];
+    }
+
+    static int? ParseMaxOutputTokens(IConfigurationSection? section)
+    {
+        var raw = section?["MaxOutputTokens"];
+        return int.TryParse(raw, out var n) && n > 0 ? n : null;
     }
 
     // Normalizes and validates an optional caller-supplied targetRepo. Guards
@@ -248,6 +261,7 @@ public static class McpTools
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
         WriteIndented = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower) },
     };
 
