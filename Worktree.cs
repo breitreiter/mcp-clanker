@@ -46,8 +46,18 @@ public static class Worktree
         return (worktreePath, branch);
     }
 
+    // Hard ceiling on any git invocation. `git worktree add` is normally
+    // sub-second; minutes means something on the OS side is wedged
+    // (antivirus, credential helper waiting on a hidden window, stale
+    // .git/worktrees lock). Surface as a rejection rather than hang the
+    // MCP request forever.
+    const int GitTimeoutMs = 30_000;
+
     static void RunGit(string cwd, params string[] args)
     {
+        var argDisplay = string.Join(' ', args);
+        ClankerLog.Info($"git: invoking `git {argDisplay}` cwd={cwd}");
+
         using var proc = new Process
         {
             StartInfo = new ProcessStartInfo
@@ -62,11 +72,31 @@ public static class Worktree
         };
         foreach (var a in args) proc.StartInfo.ArgumentList.Add(a);
         proc.Start();
-        var stdout = proc.StandardOutput.ReadToEnd();
-        var stderr = proc.StandardError.ReadToEnd();
-        proc.WaitForExit();
-        if (proc.ExitCode != 0)
+
+        // Drain both streams concurrently — reading them serially with
+        // ReadToEnd risks a pipe-buffer deadlock if git fills the
+        // not-yet-being-read stream (4KB on Windows).
+        var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+        var stderrTask = proc.StandardError.ReadToEndAsync();
+
+        if (!proc.WaitForExit(GitTimeoutMs))
+        {
+            try { proc.Kill(entireProcessTree: true); } catch { }
+            ClankerLog.Error($"git: TIMEOUT after {GitTimeoutMs}ms `git {argDisplay}` cwd={cwd}");
             throw new InvalidOperationException(
-                $"git {string.Join(' ', args)} failed (exit {proc.ExitCode}): {stderr.Trim()}");
+                $"git {argDisplay} timed out after {GitTimeoutMs / 1000}s and was killed");
+        }
+
+        var stdout = stdoutTask.GetAwaiter().GetResult();
+        var stderr = stderrTask.GetAwaiter().GetResult();
+
+        if (proc.ExitCode != 0)
+        {
+            ClankerLog.Error($"git: failed exit={proc.ExitCode} `git {argDisplay}` stderr={stderr.Trim()}");
+            throw new InvalidOperationException(
+                $"git {argDisplay} failed (exit {proc.ExitCode}): {stderr.Trim()}");
+        }
+
+        ClankerLog.Info($"git: completed `git {argDisplay}` exit=0");
     }
 }

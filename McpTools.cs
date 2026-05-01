@@ -27,25 +27,32 @@ public static class McpTools
         [Description("Dev/test convenience only — absolute path to the target git repository to operate on. Normally unset: the server uses its own current working directory. Scheduled for removal before v2/shipping — the production flow is one Claude Code session per target repo.")]
         string? targetRepo = null)
     {
+        ClankerLog.Info($"build: start contractPath={contractPath} targetRepoArg={targetRepo ?? "<null>"} cwd={Directory.GetCurrentDirectory()}");
+
         if (!File.Exists(contractPath))
             return BuildResultJson.Serialize(RejectBuild("T-???", null, null, $"Contract file not found: {contractPath}"));
 
         var markdown = await File.ReadAllTextAsync(contractPath);
         var contract = ContractParser.Parse(markdown);
+        ClankerLog.Info($"build: parsed taskId={contract.TaskId} title={contract.Title}");
 
         var (resolvedTargetRepo, targetRepoError) = ResolveTargetRepo(targetRepo);
         if (resolvedTargetRepo is null)
             return BuildResultJson.Serialize(RejectBuild(contract.TaskId, null, null, targetRepoError!));
+        ClankerLog.Info($"build: targetRepo resolved to {resolvedTargetRepo}");
 
         var validation = ContractValidator.Validate(contract, resolvedTargetRepo);
         if (!validation.IsValid)
             return BuildResultJson.Serialize(RejectBuild(contract.TaskId, null, null, validation.RejectionReason!));
+        ClankerLog.Info($"build: contract validated taskId={contract.TaskId}");
 
         string worktreePath;
         string branch;
         try
         {
+            ClankerLog.Info($"build: creating worktree for {contract.TaskId}");
             (worktreePath, branch) = Worktree.Create(resolvedTargetRepo, contract.TaskId);
+            ClankerLog.Info($"build: worktree created path={worktreePath} branch={branch}");
         }
         catch (Exception ex)
         {
@@ -60,6 +67,7 @@ public static class McpTools
         var maxOutputTokens = ParseMaxOutputTokens(providerSection) ?? DefaultMaxOutputTokens;
         var sandbox = SandboxConfig.FromConfiguration(config);
 
+        ClankerLog.Info($"build: executor starting taskId={contract.TaskId} provider={providerName} model={modelName} sandbox={sandbox.Mode}");
         var result = await Executor.RunAsync(
             chat: chat,
             contract: contract,
@@ -72,6 +80,7 @@ public static class McpTools
             traceDirectory: traceDirectory,
             sandbox: sandbox,
             ct: CancellationToken.None);
+        ClankerLog.Info($"build: executor completed taskId={contract.TaskId} terminal={result.TerminalState} toolCalls={result.ToolCallCount}");
 
         return BuildResultJson.Serialize(result);
     }
@@ -123,6 +132,7 @@ public static class McpTools
 
     static BuildResult RejectBuild(string taskId, string? worktreePath, string? branch, string reason)
     {
+        ClankerLog.Warn($"build: rejected taskId={taskId} reason={reason}");
         var now = DateTime.UtcNow;
         return new BuildResult(
             TaskId: taskId,
