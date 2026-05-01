@@ -1,4 +1,4 @@
-namespace McpClanker;
+namespace Imp;
 
 // Third safety gate: watch for the model spinning — repeating the same call
 // or stacking failures — and terminate before it burns the full tool-call

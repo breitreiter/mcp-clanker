@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 
-namespace McpClanker;
+namespace Imp;
 
 // The recursive tool-call loop. Invoke the model, dispatch any tool calls it
 // makes, append results to history, repeat. Terminate when the model stops
@@ -40,7 +40,7 @@ public static class Executor
 
         var history = new List<ChatMessage>
         {
-            new(ChatRole.System, McpClanker.Prompts.LoadSystemPrompt(providerName, contract)),
+            new(ChatRole.System, Imp.Prompts.LoadSystemPrompt(providerName, contract, sandbox.Mode)),
             new(ChatRole.User, "Begin."),
         };
 
@@ -236,7 +236,7 @@ public static class Executor
                 }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine($"[mcp-clanker] self-check phase failed: {ex.GetType().Name}: {ex.Message}");
+                    Console.Error.WriteLine($"[imp] self-check phase failed: {ex.GetType().Name}: {ex.Message}");
                 }
             }
 
@@ -258,7 +258,7 @@ public static class Executor
                 }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine($"[mcp-clanker] closeout phase failed: {ex.GetType().Name}: {ex.Message}");
+                    Console.Error.WriteLine($"[imp] closeout phase failed: {ex.GetType().Name}: {ex.Message}");
                 }
 
                 // Apply closeout's demotion BEFORE the finally block writes
@@ -289,7 +289,7 @@ public static class Executor
         catch (Exception ex)
         {
             // Transcript is best-effort; JSONL is the authoritative record.
-            Console.Error.WriteLine($"[mcp-clanker] transcript render failed: {ex.GetType().Name}: {ex.Message}");
+            Console.Error.WriteLine($"[imp] transcript render failed: {ex.GetType().Name}: {ex.Message}");
         }
 
         var filesChanged = state.FilesTouched
@@ -571,7 +571,7 @@ public static class Executor
         {
             if (toolCalls >= CloseoutToolBudget)
             {
-                Console.Error.WriteLine($"[mcp-clanker] closeout hit tool-call budget ({CloseoutToolBudget}) without calling finish_work.");
+                Console.Error.WriteLine($"[imp] closeout hit tool-call budget ({CloseoutToolBudget}) without calling finish_work.");
                 break;
             }
 

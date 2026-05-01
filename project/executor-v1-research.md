@@ -187,7 +187,7 @@ Defense in depth against "model reads a secret then exfiltrates it"
 — layered with network restriction, not replacing it.
 
 **v2 gate: Docker sandbox.** v1 runs unsandboxed, on the host. This
-is the trust boundary: work-use of mcp-clanker is deferred until we
+is the trust boundary: work-use of imp is deferred until we
 have container-isolated execution. v2 adds `docker run` around the
 executor with `--network=none` (or restricted bridge), worktree bind
 mount, resource limits. Kills the whole permissive-vs-strict

@@ -4,7 +4,7 @@ Backlogged. Not starting soon. Captured here so it can be picked up cold.
 
 ## Premise
 
-The GPT-54 instance clanker spins up to execute a contract is a real
+The GPT-54 instance imp spins up to execute a contract is a real
 coding agent. Its world is the tool surface in `Tools.cs` —
 `bash`, `read_file`, `write_file`, `apply_patch`, `grep`, `list_dir`,
 `todo_read/write`, `finish_work`. Everything is text-shaped. Calls
@@ -132,7 +132,7 @@ the smallest possible bet:
 
 **Roslyn-only diagnostics, in-process, host-side, C# only.**
 
-- `Microsoft.CodeAnalysis.Workspaces.MSBuild` runs in clanker's process
+- `Microsoft.CodeAnalysis.Workspaces.MSBuild` runs in imp's process
   alongside the executor, no external server, no Docker complication.
 - Expose **one** new tool: `lsp_diagnostics([file?])` — returns current
   diagnostics for the file or the whole workspace.
@@ -153,7 +153,7 @@ for the bigger build.
 - **Not a Claude Code plugin-bundle thing.** OpenClaw's other argument
   — that LSP belongs in the host because Claude Code plugin bundles
   declare `.lsp.json` next to `.mcp.json` — is about plugin authoring.
-  Clanker is a standalone MCP server, not a Claude Code plugin bundle.
+  Imp is a standalone MCP server, not a Claude Code plugin bundle.
   If a future user wants to bring their own LSP config, reading a
   `.lsp.json` from the target worktree is a tiny convenience that rides
   on a known convention; it's not a driver for this work.
@@ -177,7 +177,7 @@ for the bigger build.
   introduces a fatal error. Start pull.
 - `lsp_rename` semantics for symbols defined outside the worktree
   (NuGet packages, stdlib). Refuse, or apply only to in-tree
-  references? Refuse — clanker doesn't edit dependencies.
+  references? Refuse — imp doesn't edit dependencies.
 
 ## Measurement plan
 

@@ -1,15 +1,15 @@
 # Architecture
 
 > **⚠ Stale (2026-05-01).** This doc describes the pre-CLI MCP-stdio
-> architecture. The MCP layer was removed; clanker is now a bash CLI
-> invoked from Claude Code via the `clanker` skill (see
-> `skills/clanker.md` for the user-facing surface, `project/cli-plan.md`
+> architecture. The MCP layer was removed; imp is now a bash CLI
+> invoked from Claude Code via the `imp` skill (see
+> `skills/imp.md` for the user-facing surface, `project/cli-plan.md`
 > for the rewrite plan). The build-flow / executor / sandbox / safety-gate
 > sections below are still substantively correct — only the *transport*
 > changed (MCP stdio → CLI subprocess). Treat the "MCP tool call
 > arrives" framing as historical until this doc is rewritten.
 
-How clanker turns a contract markdown file into a verified piece of code change. Mechanical, top-down.
+How imp turns a contract markdown file into a verified piece of code change. Mechanical, top-down.
 
 ## Mental model
 
@@ -17,12 +17,12 @@ How clanker turns a contract markdown file into a verified piece of code change.
 ┌────────────────────────────────────────────────────────────────────────┐
 │ Claude Code (parent, Opus)                                             │
 │   - writes contract T-NNN-slug.md                                      │
-│   - calls mcp-clanker:build(contractPath)                              │
+│   - calls imp:build(contractPath)                              │
 │   - reads returned proof-of-work JSON, decides merge / retry / abandon │
 └─────────────────────────────┬──────────────────────────────────────────┘
                               │ stdio MCP
 ┌─────────────────────────────▼──────────────────────────────────────────┐
-│ mcp-clanker (this repo, C# stdio server)                               │
+│ imp (this repo, C# stdio server)                               │
 │   McpTools.Build:                                                      │
 │     1. parse contract         (Contract.cs)                            │
 │     2. validate contract      (ContractValidator)                      │
@@ -51,7 +51,7 @@ How clanker turns a contract markdown file into a verified piece of code change.
 Three key invariants:
 
 1. **The executor runs in a disposable worktree.** A fresh git branch `contract/T-NNN` off the target repo's HEAD. Never touches the main checkout.
-2. **The parent decides what to do with a result.** `terminal_state` is a report, not a gate. Clanker returns POW and stops.
+2. **The parent decides what to do with a result.** `terminal_state` is a report, not a gate. Imp returns POW and stops.
 3. **Every verification is weak on its own; the set is strong.** Scope adherence + safety gates + closeout diff review each catch a different failure mode. See `safety.md` (TODO) or `docs/architecture.md#safety-architecture` below.
 
 ## Request lifecycle
@@ -60,7 +60,7 @@ Happy path, top-to-bottom, with file:line references where they matter.
 
 ### 1. MCP tool call arrives
 
-Claude Code invokes `mcp__mcp-clanker__build(contractPath, targetRepo?)` over stdio. The ModelContextProtocol server routes it to `McpTools.Build` (`McpTools.cs:20`).
+Claude Code invokes `mcp__imp__build(contractPath, targetRepo?)` over stdio. The ModelContextProtocol server routes it to `McpTools.Build` (`McpTools.cs:20`).
 
 ### 2. Contract parse + validate
 
@@ -182,7 +182,7 @@ The BuildResult is serialized by `BuildResultJson.Serialize` using snake_case ke
 
 ### 6. Return
 
-`McpTools.Build` returns the serialized JSON. Claude Code reads it. Clanker forgets the run — no persistent state beyond the files on disk (worktree, trace, transcript).
+`McpTools.Build` returns the serialized JSON. Claude Code reads it. Imp forgets the run — no persistent state beyond the files on disk (worktree, trace, transcript).
 
 ## Execution state
 
@@ -203,7 +203,7 @@ Notice: `ExecutorState` holds no history, no chat messages, no prompts. That sta
 
 ## Tool plane
 
-Clanker exposes three different tool surfaces depending on the phase.
+Imp exposes three different tool surfaces depending on the phase.
 
 ### Main-loop tools (`Tools.Create`)
 
@@ -307,12 +307,12 @@ None of this is auto-cleaned. The parent (Claude Code) decides whether to merge,
 
 ## Process boundaries
 
-- **Claude Code ↔ mcp-clanker**: stdio MCP. JSON-RPC framed over stdin/stdout. Started by Claude Code as a long-lived subprocess (`dotnet run --project <repo>`). Claude Code → server: tool calls. Server → Claude Code: tool results + MCP resource reads.
-- **mcp-clanker ↔ chat provider**: HTTPS via Microsoft.Extensions.AI abstractions. One `IChatClient` instance built from `appsettings.json`'s active provider.
-- **mcp-clanker ↔ bash**: `Process.Start` per bash call. In Host mode, the process is `/bin/bash`; in Docker mode, it's `docker` (which itself spawns a container).
-- **mcp-clanker ↔ git**: `Process.Start` invocations for worktree create and diff capture.
+- **Claude Code ↔ imp**: stdio MCP. JSON-RPC framed over stdin/stdout. Started by Claude Code as a long-lived subprocess (`dotnet run --project <repo>`). Claude Code → server: tool calls. Server → Claude Code: tool results + MCP resource reads.
+- **imp ↔ chat provider**: HTTPS via Microsoft.Extensions.AI abstractions. One `IChatClient` instance built from `appsettings.json`'s active provider.
+- **imp ↔ bash**: `Process.Start` per bash call. In Host mode, the process is `/bin/bash`; in Docker mode, it's `docker` (which itself spawns a container).
+- **imp ↔ git**: `Process.Start` invocations for worktree create and diff capture.
 
-mcp-clanker has no persistent state outside the target repo's worktrees directory. A restart loses all in-flight runs (there are none — `build` blocks until it returns).
+imp has no persistent state outside the target repo's worktrees directory. A restart loses all in-flight runs (there are none — `build` blocks until it returns).
 
 ## Extension points
 

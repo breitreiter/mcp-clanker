@@ -1,9 +1,9 @@
-# clanker — developer notes
+# imp — developer notes
 
 CLI tool that delegates rote, narrow-scoped coding work to a cheap,
 slow executor (default: Azure GPT-5.1-codex-mini) running in a fresh
 git worktree, and returns a structured proof-of-work. Invoked from
-Claude Code via Bash + the `clanker` skill in `skills/clanker.md`.
+Claude Code via Bash + the `imp` skill in `skills/imp.md`.
 See `project/BRIEF.md` for the architecture and intent.
 
 Originally an MCP stdio server; rewritten as a CLI to escape MCP
@@ -28,7 +28,7 @@ Config is loaded from `appsettings.json` — schema in
 `appsettings.json` first, then falls back to the one next to the
 DLL.
 
-For day-to-day Claude Code use, the parent invokes `clanker` via
+For day-to-day Claude Code use, the parent invokes `imp` via
 Bash. Each invocation is a fresh process — no long-lived state, no
 DLL lock issues, no restart-to-pick-up-tool-changes.
 
@@ -36,14 +36,14 @@ DLL lock issues, no restart-to-pick-up-tool-changes.
 
 Flat. `*.cs` + `*.csproj` at repo root. `project/` holds markdown
 design docs only. `Templates/` holds the contract skeleton and the
-proof-of-work example (printed by `clanker template <name>`).
-`skills/clanker.md` is the source of truth for how the parent model
-should use clanker — copy or symlink it into Claude Code's skills
+proof-of-work example (printed by `imp template <name>`).
+`skills/imp.md` is the source of truth for how the parent model
+should use imp — copy or symlink it into Claude Code's skills
 directory.
 
 ## Logging
 
-`ClankerLog` writes to `<exe-dir>/clanker.log` (next to the DLL) and
+`ImpLog` writes to `<exe-dir>/imp.log` (next to the DLL) and
 mirrors to stderr. Append-only, thread-safe, never throws. Each
 `build` invocation logs every pre-worktree step, the executor
 start/finish, and any rejection reason. Per-contract trace artefacts

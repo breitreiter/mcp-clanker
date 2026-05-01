@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace McpClanker;
+namespace Imp;
 
 // Parses the markdown contract template from Templates/contract.md into a
 // structured form. Lenient by design — missing sections degrade to empty

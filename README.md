@@ -1,4 +1,4 @@
-# mcp-clanker
+# imp
 
 C# stdio MCP server that hands structured coding tasks (*contracts*) from Claude Code to a cheaper executor model. Intended for rote, well-scoped work you don't want to burn Opus tokens on.
 
@@ -16,7 +16,7 @@ Remaining gaps before GA: a `**Allowed network:**` contract declaration (so cont
 ## What it does
 
 1. Claude Code (Opus-scale planning) writes a **contract** — a markdown file describing a focused change: goal, explicit file scope, contract body, acceptance criteria, non-goals. Template at `Templates/contract.md` and exposed as the MCP resource `template://contract`.
-2. `mcp-clanker`'s `build` tool parses the contract, creates a fresh git **worktree** on a new branch (`contract/T-NNN`) in the target repo, and runs an **executor** — a tool-calling loop against the configured provider (primary target: Azure Foundry / gpt-5.1-codex-mini).
+2. `imp`'s `build` tool parses the contract, creates a fresh git **worktree** on a new branch (`contract/T-NNN`) in the target repo, and runs an **executor** — a tool-calling loop against the configured provider (primary target: Azure Foundry / gpt-5.1-codex-mini).
 3. Safety gates pre-flight every bash command and watch the tool-call history for loops. Any breach terminates the run with a structured `blocked_question`.
 4. After the executor terminates cleanly, a one-turn **self-check** asks the model to report pass/fail per acceptance bullet with a citation, then a fresh-context **closeout reviewer** independently verifies each bullet against the actual worktree diff.
 5. Returns a **proof-of-work** JSON: terminal state, tool-call count, token usage, estimated cost, files changed, scope-adherence report, closeout verdicts with citations, worktree + branch + trace paths. A full execution **trace** (JSONL) and a rendered **transcript** (md) land in a sidecar directory for forensic reading.
@@ -46,8 +46,8 @@ Configured via `appsettings.json`. See `appsettings.example.json` for shape.
 ## Setup
 
 ```bash
-git clone https://github.com/breitreiter/mcp-clanker.git
-cd mcp-clanker
+git clone https://github.com/breitreiter/imp.git
+cd imp
 cp appsettings.example.json appsettings.json
 # edit appsettings.json and fill in provider credentials
 dotnet build
@@ -88,10 +88,10 @@ Register the server in your Claude Code MCP config:
 ```json
 {
   "mcpServers": {
-    "mcp-clanker": {
+    "imp": {
       "type": "stdio",
       "command": "dotnet",
-      "args": ["run", "--project", "/absolute/path/to/mcp-clanker"]
+      "args": ["run", "--project", "/absolute/path/to/imp"]
     }
   }
 }
@@ -113,32 +113,32 @@ Plus two MCP resources: `template://contract` (skeleton for a new contract) and 
 
 ### Install the Claude Code skill
 
-The `skills/clanker.md` file in this repo teaches Claude Code when to delegate, how to write contracts, how to interpret proof-of-work, and the `blocked_question.category` retry loop. Install it once at user scope so it's active in any repo where the MCP server is registered:
+The `skills/imp.md` file in this repo teaches Claude Code when to delegate, how to write contracts, how to interpret proof-of-work, and the `blocked_question.category` retry loop. Install it once at user scope so it's active in any repo where the MCP server is registered:
 
 ```bash
 mkdir -p ~/.claude/skills
-ln -s "$(pwd)/skills/clanker.md" ~/.claude/skills/clanker.md
+ln -s "$(pwd)/skills/imp.md" ~/.claude/skills/imp.md
 # or copy instead of symlink if you'd rather not track repo edits:
-#   cp skills/clanker.md ~/.claude/skills/clanker.md
+#   cp skills/imp.md ~/.claude/skills/imp.md
 ```
 
 Restart the Claude Code session after installing so the skill is picked up.
 
 ### Build the Docker sandbox (optional, recommended for real use)
 
-Clanker defaults to `Sandbox.Mode=Host`, which runs `bash` directly on the host — convenient during development, but no filesystem or network isolation beyond the application-layer safety gates. For production-like use, build the sandbox image:
+Imp defaults to `Sandbox.Mode=Host`, which runs `bash` directly on the host — convenient during development, but no filesystem or network isolation beyond the application-layer safety gates. For production-like use, build the sandbox image:
 
 ```bash
 ./sandbox/build.sh
 ```
 
-That builds `clanker-sandbox:latest` (dotnet SDK 8 + git) and creates the `clanker-nuget` Docker volume that shares the package cache across contracts. Then flip `Sandbox.Mode` to `"Docker"` in `appsettings.json`.
+That builds `imp-sandbox:latest` (dotnet SDK 8 + git) and creates the `imp-nuget` Docker volume that shares the package cache across contracts. Then flip `Sandbox.Mode` to `"Docker"` in `appsettings.json`.
 
 In Docker mode, each `bash` call runs in a throwaway container with:
 
 - `--network=none` — no DNS, no loopback to host, no external network.
 - Worktree bind-mounted at `/work` (rw) — the only writable host path.
-- Nuget cache at `/root/.nuget/packages` (rw, shared `clanker-nuget` volume).
+- Nuget cache at `/root/.nuget/packages` (rw, shared `imp-nuget` volume).
 - Resource limits (2 GB memory, 2 CPUs, 256 pids).
 
 The cached nuget volume means `dotnet restore` works for packages you've already downloaded once; **packages the project hasn't adopted yet will fail to restore** — that's deliberate. Package-adoption is a judgment call that belongs in the parent (Claude Code), not in a cheap executor that reaches for random dependencies.
@@ -148,8 +148,8 @@ First cold-cache run pays the full nuget download; subsequent runs hit the volum
 ## Project layout
 
 ```
-mcp-clanker/
-├── McpClanker.csproj
+imp/
+├── Imp.csproj
 ├── Program.cs              # stdio MCP server + --ping / --build / --render-transcript CLI
 ├── McpTools.cs             # MCP-exposed tools (build, validate_contract, get_contract, …)
 ├── Executor.cs             # main tool-call loop, self-check, closeout phases
@@ -173,7 +173,7 @@ mcp-clanker/
 ├── Prompts/                # system-prompt templates (default, AzureFoundry, closeout)
 ├── Templates/              # MCP resource payloads (contract.md, proof-of-work.json)
 ├── sandbox/                # Dockerfile + build.sh for the execution sandbox
-├── skills/clanker.md       # Claude Code skill — install to ~/.claude/skills/
+├── skills/imp.md       # Claude Code skill — install to ~/.claude/skills/
 ├── appsettings.example.json
 ├── CLAUDE.md               # developer notes (build gotchas, conventions)
 ├── docs/                   # mechanical reference — architecture + file formats
@@ -193,7 +193,7 @@ Design decisions and roadmap — the "why" — live under `project/`:
 - `executor-v1-research.md` — v1 design decisions with source citations
 - `bucket-a-survey.md` — primary-source survey of how shipping systems (Cursor, Aider, Codex, Devin, Kiro, Spec Kit, etc.) structure the planning-to-execution handoff
 - `v2-plan.md` — phased path from alpha through Docker sandbox
-- `spec-kit-integration.md` — exploratory doc on pairing clanker with GitHub Spec Kit
+- `spec-kit-integration.md` — exploratory doc on pairing imp with GitHub Spec Kit
 - `TODO.md` — rolling work queue
 
 ## License

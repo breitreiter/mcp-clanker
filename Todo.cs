@@ -1,9 +1,9 @@
-namespace McpClanker;
+namespace Imp;
 
 // Session-scoped task checklist the model uses to plan and track multi-step
 // work during a single contract run. Ported from nb/TodoManager.cs and
 // nb/TodoTool.cs. Simplified: one class per concern (no separate Manager +
-// Tool split — clanker registers the tool functions inline in Tools.Create).
+// Tool split — imp registers the tool functions inline in Tools.Create).
 //
 // The `Content` field is the unique key — todo_write updates existing items
 // in place, adds new ones, and removes any marked `cancelled`. Cleared when

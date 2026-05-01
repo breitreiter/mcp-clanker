@@ -1,4 +1,4 @@
-namespace McpClanker;
+namespace Imp;
 
 // Loads the executor's system prompt from the Prompts/ directory alongside
 // the executable. Fallback chain: Prompts/<provider>.md → Prompts/default.md.
@@ -12,10 +12,11 @@ public static class Prompts
 {
     const string ContractToken = "{{CONTRACT}}";
 
-    public static string LoadSystemPrompt(string? providerName, Contract contract)
+    public static string LoadSystemPrompt(string? providerName, Contract contract, SandboxMode sandboxMode)
     {
         var template = LoadTemplate(providerName);
-        return template.Replace(ContractToken, contract.RawMarkdown);
+        var body = template.Replace(ContractToken, contract.RawMarkdown);
+        return body + ShellResolver.GetExecutorEnvNote(sandboxMode);
     }
 
     public static string LoadCloseoutPrompt()

@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Configuration;
 
-namespace McpClanker;
+namespace Imp;
 
 // Captures how the bash tool should execute commands — either directly on
 // the host shell (fast, no isolation) or inside a Docker container with
@@ -9,7 +9,7 @@ namespace McpClanker;
 
 public enum SandboxMode
 {
-    Host,    // /bin/bash directly; what clanker did pre-Phase 6.
+    Host,    // host bash directly (Git Bash on Windows); what imp did pre-Phase 6.
     Docker,  // docker run per command; the v2-production configuration.
 }
 
@@ -27,8 +27,8 @@ public sealed record SandboxConfig(
     // opt into the sandbox; the other fields only matter in Docker mode.
     public static SandboxConfig Default { get; } = new(
         Mode: SandboxMode.Host,
-        Image: "clanker-sandbox:latest",
-        NugetVolume: "clanker-nuget",
+        Image: "imp-sandbox:latest",
+        NugetVolume: "imp-nuget",
         MemoryLimit: "2g",
         CpuLimit: "2",
         PidsLimit: 256,

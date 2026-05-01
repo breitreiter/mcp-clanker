@@ -3,7 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace McpClanker;
+namespace Imp;
 
 // Append-only JSONL sidecar. One line per event, flushed immediately so an
 // ungraceful exit still preserves what we observed up to the crash.

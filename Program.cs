@@ -1,7 +1,7 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 
-namespace McpClanker;
+namespace Imp;
 
 // CLI entry point. One process per invocation, scoped to cwd.
 //
@@ -23,8 +23,8 @@ public class Program
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"clanker: unhandled error: {ex.GetType().Name}: {ex.Message}");
-            ClankerLog.Error($"unhandled: {ex.GetType().Name}: {ex.Message}");
+            Console.Error.WriteLine($"imp: unhandled error: {ex.GetType().Name}: {ex.Message}");
+            ImpLog.Error($"unhandled: {ex.GetType().Name}: {ex.Message}");
             return 2;
         }
     }
@@ -56,7 +56,7 @@ public class Program
 
     static int UnknownCommand(string cmd)
     {
-        Console.Error.WriteLine($"clanker: unknown command '{cmd}'. Run `clanker help` for usage.");
+        Console.Error.WriteLine($"imp: unknown command '{cmd}'. Run `imp help` for usage.");
         return 1;
     }
 
@@ -69,7 +69,7 @@ public class Program
     static void PrintUsage()
     {
         Console.WriteLine("""
-Usage: clanker <command> [args]
+Usage: imp <command> [args]
 
 Lifecycle:
   build <contract-path> [provider]   Run the executor against a contract.
@@ -120,7 +120,7 @@ build / validate / list / show / log / review.
     {
         if (args.Length < 1)
         {
-            Console.Error.WriteLine("Usage: clanker build <contract-path> [provider]");
+            Console.Error.WriteLine("Usage: imp build <contract-path> [provider]");
             return 1;
         }
         var contractPath = args[0];
@@ -128,7 +128,7 @@ build / validate / list / show / log / review.
         var config = BuildConfiguration(providerOverride);
         var chat = Providers.Create(config);
 
-        Console.Error.WriteLine($"[clanker] build start: contractPath={contractPath} provider={config["ActiveProvider"]} cwd={Directory.GetCurrentDirectory()}");
+        Console.Error.WriteLine($"[imp] build start: contractPath={contractPath} provider={config["ActiveProvider"]} cwd={Directory.GetCurrentDirectory()}");
         var json = await McpTools.Build(chat, config, contractPath);
         Console.WriteLine(json);
         return 0;
@@ -138,7 +138,7 @@ build / validate / list / show / log / review.
     {
         if (args.Length < 1)
         {
-            Console.Error.WriteLine("Usage: clanker validate <contract-path>");
+            Console.Error.WriteLine("Usage: imp validate <contract-path>");
             return 1;
         }
         var json = await McpTools.ValidateContract(args[0]);
@@ -150,7 +150,7 @@ build / validate / list / show / log / review.
     {
         if (args.Length < 1)
         {
-            Console.Error.WriteLine("Usage: clanker review <task-id>");
+            Console.Error.WriteLine("Usage: imp review <task-id>");
             return 1;
         }
         var bundle = McpTools.Review(args[0]);
@@ -171,7 +171,7 @@ build / validate / list / show / log / review.
     {
         if (args.Length < 1)
         {
-            Console.Error.WriteLine("Usage: clanker show <task-id>");
+            Console.Error.WriteLine("Usage: imp show <task-id>");
             return 1;
         }
         Console.Write(McpTools.GetContract(args[0]));
@@ -182,7 +182,7 @@ build / validate / list / show / log / review.
     {
         if (args.Length < 1)
         {
-            Console.Error.WriteLine("Usage: clanker log <task-id>");
+            Console.Error.WriteLine("Usage: imp log <task-id>");
             return 1;
         }
         Console.Write(McpTools.GetLog(args[0]));
@@ -193,7 +193,7 @@ build / validate / list / show / log / review.
     {
         if (args.Length < 1)
         {
-            Console.Error.WriteLine("Usage: clanker template <contract|proof-of-work>");
+            Console.Error.WriteLine("Usage: imp template <contract|proof-of-work>");
             return 1;
         }
         var fileName = args[0] switch
@@ -204,13 +204,13 @@ build / validate / list / show / log / review.
         };
         if (fileName is null)
         {
-            Console.Error.WriteLine($"clanker: unknown template '{args[0]}'. Available: contract, proof-of-work");
+            Console.Error.WriteLine($"imp: unknown template '{args[0]}'. Available: contract, proof-of-work");
             return 1;
         }
         var path = Path.Combine(AppContext.BaseDirectory, "Templates", fileName);
         if (!File.Exists(path))
         {
-            Console.Error.WriteLine($"clanker: template file not found at {path}");
+            Console.Error.WriteLine($"imp: template file not found at {path}");
             return 2;
         }
         Console.Write(File.ReadAllText(path));
@@ -311,7 +311,7 @@ build / validate / list / show / log / review.
     {
         if (args.Length < 1)
         {
-            Console.Error.WriteLine("Usage: clanker render-transcript <trace-jsonl-path>");
+            Console.Error.WriteLine("Usage: imp render-transcript <trace-jsonl-path>");
             return 1;
         }
         var tracePath = args[0];

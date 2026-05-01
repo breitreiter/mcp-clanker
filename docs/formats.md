@@ -1,6 +1,6 @@
 # File formats
 
-Reference for the four on-disk/on-wire formats clanker produces or consumes. Intended for someone writing a consumer: a dashboard, a parser, a sibling agent, a migration tool.
+Reference for the four on-disk/on-wire formats imp produces or consumes. Intended for someone writing a consumer: a dashboard, a parser, a sibling agent, a migration tool.
 
 For how these files move through the system, see `architecture.md`.
 
@@ -68,7 +68,7 @@ All sections are optional from the parser's perspective. The validator enforces 
 
 - Parsed by `^\s*-\s*(.+?)\s*[—-]\s*(.+?)\s*$`.
 - Each entry = `(Path, Note)`.
-- Used only as input to the model (appears in the system prompt via `{{CONTRACT}}`). Clanker itself doesn't read these files eagerly.
+- Used only as input to the model (appears in the system prompt via `{{CONTRACT}}`). Imp itself doesn't read these files eagerly.
 
 ```markdown
 **Acceptance:**
@@ -102,7 +102,7 @@ or
 ```
 
 - Comma-separated task IDs, or the literal word `none` / empty.
-- Input only; clanker does not orchestrate dependencies.
+- Input only; imp does not orchestrate dependencies.
 
 ### Section detection
 

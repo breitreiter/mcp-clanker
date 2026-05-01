@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace McpClanker;
+namespace Imp;
 
 // Locates a sequence of lines within a file using a cascade of equality
 // checks: exact → right-trimmed → fully-trimmed → Unicode-folded + trimmed.

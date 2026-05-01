@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 
-namespace McpClanker;
+namespace Imp;
 
 // Reads a JSONL trace (written by TraceWriter) and emits a human-readable
 // markdown transcript next to it. Best-effort — malformed or unexpected

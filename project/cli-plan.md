@@ -1,4 +1,4 @@
-# Plan to redesign clanker as a CLI tool
+# Plan to redesign imp as a CLI tool
 
 ## Premise
 
@@ -26,9 +26,9 @@ matters.
 
 What we lose: tool descriptions auto-injected into the parent
 model's tool catalog, and resource templates. A Claude Code skill
-markdown carries the prose, and a `clanker template <name>`
+markdown carries the prose, and a `imp template <name>`
 subcommand replaces the resource templates. The skill (today at
-`skills/clanker.md`) is already 80% of the work.
+`skills/imp.md`) is already 80% of the work.
 
 What we gain: every invocation a fresh process (no state drift),
 stderr visible to the parent (no opaque hangs), no DLL lock on
@@ -45,7 +45,7 @@ to the host shape.
 A principle this plan must not weaken, because the host-shape
 change makes it easier to violate by accident:
 
-The whole point of clanker is that the parent (Opus) delegates
+The whole point of imp is that the parent (Opus) delegates
 rote work and trusts the proof-of-work JSON to summarize it. If
 the parent reads source files inside the worktree to verify — or
 worse, edits them — three things break at once: the cost premise
@@ -59,7 +59,7 @@ with it is:
 
 1. Read `terminal_state` + `acceptance[]` + `notes` from the
    proof-of-work JSON.
-2. Run `clanker review <task-id>` (see phase 1 below) for the
+2. Run `imp review <task-id>` (see phase 1 below) for the
    bundled view: verdicts + scope check + files changed + diff.
 3. Open `transcript_path` only if steps 1–2 look off.
 4. Decide: merge, cherry-pick, request a revision contract, or
@@ -73,13 +73,13 @@ in-place.
 
 Two concrete commitments in this plan enforce that boundary:
 
-- **Phase 1 ships `clanker review <task-id>`** so the parent has
+- **Phase 1 ships `imp review <task-id>`** so the parent has
   one obvious command to run; reaching into the worktree requires
   extra, conscious effort.
 - **Phase 2 ships an explicit "what the parent does and doesn't
   do with a worktree" section in the skill,** replacing the
   current permissive "navigate to `worktree_path`" prose
-  (`skills/clanker.md:92`, `skills/clanker.md:94`).
+  (`skills/imp.md:92`, `skills/imp.md:94`).
 
 If observed behavior in phase 3 shows the parent still digging
 into the worktree, the cause is one of: skill prose isn't strong
@@ -90,27 +90,27 @@ wrong — none of which are fixable by undoing this plan.
 
 | MCP today | CLI replacement | Output |
 |---|---|---|
-| `build(contractPath, targetRepo?)` | `clanker build <contract-path>` | JSON to stdout (the proof-of-work) |
-| `validate_contract(contractPath, targetRepo?)` | `clanker validate <contract-path>` | JSON to stdout |
-| `list_tasks(targetRepo?)` | `clanker list` | JSON array to stdout |
-| `get_contract(taskId, targetRepo?)` | `clanker show <task-id>` | Markdown to stdout |
-| `get_log(taskId, targetRepo?)` | `clanker log <task-id>` | Markdown to stdout |
-| *(new)* | `clanker review <task-id>` | Markdown bundle to stdout: terminal_state, acceptance verdicts, scope_adherence, files_changed, notes, plus rendered `git diff main...contract/T-NNN`. The canonical "what to do after a build" command — keeps the parent out of the worktree. |
+| `build(contractPath, targetRepo?)` | `imp build <contract-path>` | JSON to stdout (the proof-of-work) |
+| `validate_contract(contractPath, targetRepo?)` | `imp validate <contract-path>` | JSON to stdout |
+| `list_tasks(targetRepo?)` | `imp list` | JSON array to stdout |
+| `get_contract(taskId, targetRepo?)` | `imp show <task-id>` | Markdown to stdout |
+| `get_log(taskId, targetRepo?)` | `imp log <task-id>` | Markdown to stdout |
+| *(new)* | `imp review <task-id>` | Markdown bundle to stdout: terminal_state, acceptance verdicts, scope_adherence, files_changed, notes, plus rendered `git diff main...contract/T-NNN`. The canonical "what to do after a build" command — keeps the parent out of the worktree. |
 | `update_contract(path, content)` | *removed* — parent uses `Write`/`Edit` directly | n/a |
-| `ping([provider])` | `clanker ping [provider]` | Provider response to stdout |
-| `template://contract` resource | `clanker template contract` | Markdown to stdout |
-| `template://proof-of-work` resource | `clanker template proof-of-work` | JSON to stdout |
+| `ping([provider])` | `imp ping [provider]` | Provider response to stdout |
+| `template://contract` resource | `imp template contract` | Markdown to stdout |
+| `template://proof-of-work` resource | `imp template proof-of-work` | JSON to stdout |
 
 Conventions:
 
 - `targetRepo` parameter goes away entirely — the CLI uses cwd, no
   override. The MCP-era flag was already marked for removal in
-  `McpTools.cs:27` and `skills/clanker.md:68`.
+  `McpTools.cs:27` and `skills/imp.md:68`.
 - Errors go to stderr, exit non-zero only for catastrophic
   failures (can't read contract file, unhandled exception). A
   `Rejected` result is still exit 0 with the rejection in the
   JSON — keeps parent parsing uniform.
-- Existing `clanker.log` (added 2026-05-01) keeps working
+- Existing `imp.log` (added 2026-05-01) keeps working
   unchanged. With per-invocation processes, log rotation matters
   even less than today.
 
@@ -118,11 +118,11 @@ Conventions:
 
 | Phase | Goal | Ships | How you validate | Sessions |
 |---|---|---|---|---|
-| **1. Subcommand router + parity + `review`** | CLI exposes the full MCP surface, no MCP code touched yet, *plus* the new `clanker review` affordance that keeps the parent out of the worktree | `Program.cs` becomes a real subcommand dispatcher (System.CommandLine or hand-rolled — decide at phase start); add the missing verbs (`list`, `show`, `log`, `validate`, `template`, plus rename existing `--build` etc. to `build`); each verb calls the same `McpTools.*` static method as today; **add `clanker review <task-id>`** which loads proof-of-work for the most recent run, formats verdicts + scope check + files changed + notes, and shells out to `git diff main...contract/T-NNN` for the diff body | `clanker build <contract>` and `clanker validate <contract>` produce identical JSON to the MCP tool calls; `clanker template contract` matches `template://contract` byte-for-byte; `clanker review T-NNN` on a finished build produces a single-screen bundle that contains everything the parent needs to merge/abandon decisions without opening files in the worktree | 1–2 |
-| **2. Skill rewrite + worktree-boundary section** | Parent model knows to use the CLI, not MCP, *and* knows the worktree is a PR-shaped artifact, not a workspace | `skills/clanker.md` updated: replace every `build(contractPath)` etc. with `clanker build <path>`; drop the "MCP surface" section, add a "CLI reference" section; update the quick-reference table; document the one-time `clanker *` permission allowlist for Claude Code; **add an explicit "Parent's relationship to the worktree" section** with the four-step interaction list above; rewrite the current permissive "navigate to `worktree_path`" prose (`skills/clanker.md:92`, `skills/clanker.md:94`) to "trust closeout verdicts; spot-check the diff via `clanker review` if something looks off" | Read the new skill cold and try to delegate a small task — instructions should be self-contained without referencing MCP; the skill should make `clanker review` the obvious next step after `build`, with reading source files in the worktree framed as a smell | 1 |
-| **3. End-to-end on Windows + boundary validation** | The original bug is fixed, *and* the parent demonstrably stays out of the worktree | A real contract run on the Windows machine via Claude Code → bash → `clanker build`; observe stderr in Claude Code's terminal output; confirm hang scenarios surface as visible errors; observe the parent's post-build behavior to confirm it runs `clanker review` rather than reading worktree files | One real contract executes end-to-end on Windows; one deliberately-broken contract (missing scope file) returns a visible Rejected; one git-timeout scenario surfaces the 30s timeout from `Worktree.cs`; the parent's tool-call trace shows `clanker review` rather than `Read` calls into the worktree | 1 |
-| **4. MCP removal** | The dead layer is gone | Strip `[McpServerTool]` attributes from `McpTools.cs`; remove the `AddMcpServer().WithStdioServerTransport().WithToolsFromAssembly()` chain from `Program.cs`; remove `ModelContextProtocol` and (likely) `Microsoft.Extensions.Hosting` package refs; remove the MCP-subprocess-rebuild gotcha section from `CLAUDE.md`; rename the project from McpClanker → Clanker if we feel like it | `dotnet build` still passes; package count drops; `Program.cs` shrinks; CLAUDE.md no longer warns about subprocess locks | 1 |
-| **5. Distribution polish (optional)** | `clanker` is a binary on $PATH, no `dotnet run` | `dotnet publish -c Release -r <rid> --self-contained` produces a single-file binary; document install via a `./install.sh` (Linux/macOS) or copy-to-PATH (Windows); update the skill to use `clanker` instead of `dotnet run --project ...` | One install step on a fresh machine, then `clanker build` works without the .NET SDK | 1–2 |
+| **1. Subcommand router + parity + `review`** | CLI exposes the full MCP surface, no MCP code touched yet, *plus* the new `imp review` affordance that keeps the parent out of the worktree | `Program.cs` becomes a real subcommand dispatcher (System.CommandLine or hand-rolled — decide at phase start); add the missing verbs (`list`, `show`, `log`, `validate`, `template`, plus rename existing `--build` etc. to `build`); each verb calls the same `McpTools.*` static method as today; **add `imp review <task-id>`** which loads proof-of-work for the most recent run, formats verdicts + scope check + files changed + notes, and shells out to `git diff main...contract/T-NNN` for the diff body | `imp build <contract>` and `imp validate <contract>` produce identical JSON to the MCP tool calls; `imp template contract` matches `template://contract` byte-for-byte; `imp review T-NNN` on a finished build produces a single-screen bundle that contains everything the parent needs to merge/abandon decisions without opening files in the worktree | 1–2 |
+| **2. Skill rewrite + worktree-boundary section** | Parent model knows to use the CLI, not MCP, *and* knows the worktree is a PR-shaped artifact, not a workspace | `skills/imp.md` updated: replace every `build(contractPath)` etc. with `imp build <path>`; drop the "MCP surface" section, add a "CLI reference" section; update the quick-reference table; document the one-time `imp *` permission allowlist for Claude Code; **add an explicit "Parent's relationship to the worktree" section** with the four-step interaction list above; rewrite the current permissive "navigate to `worktree_path`" prose (`skills/imp.md:92`, `skills/imp.md:94`) to "trust closeout verdicts; spot-check the diff via `imp review` if something looks off" | Read the new skill cold and try to delegate a small task — instructions should be self-contained without referencing MCP; the skill should make `imp review` the obvious next step after `build`, with reading source files in the worktree framed as a smell | 1 |
+| **3. End-to-end on Windows + boundary validation** | The original bug is fixed, *and* the parent demonstrably stays out of the worktree | A real contract run on the Windows machine via Claude Code → bash → `imp build`; observe stderr in Claude Code's terminal output; confirm hang scenarios surface as visible errors; observe the parent's post-build behavior to confirm it runs `imp review` rather than reading worktree files | One real contract executes end-to-end on Windows; one deliberately-broken contract (missing scope file) returns a visible Rejected; one git-timeout scenario surfaces the 30s timeout from `Worktree.cs`; the parent's tool-call trace shows `imp review` rather than `Read` calls into the worktree | 1 |
+| **4. MCP removal** | The dead layer is gone | Strip `[McpServerTool]` attributes from `McpTools.cs`; remove the `AddMcpServer().WithStdioServerTransport().WithToolsFromAssembly()` chain from `Program.cs`; remove `ModelContextProtocol` and (likely) `Microsoft.Extensions.Hosting` package refs; remove the MCP-subprocess-rebuild gotcha section from `CLAUDE.md`; rename the project from Imp → Imp if we feel like it | `dotnet build` still passes; package count drops; `Program.cs` shrinks; CLAUDE.md no longer warns about subprocess locks | 1 |
+| **5. Distribution polish (optional)** | `imp` is a binary on $PATH, no `dotnet run` | `dotnet publish -c Release -r <rid> --self-contained` produces a single-file binary; document install via a `./install.sh` (Linux/macOS) or copy-to-PATH (Windows); update the skill to use `imp` instead of `dotnet run --project ...` | One install step on a fresh machine, then `imp build` works without the .NET SDK | 1–2 |
 
 **~4–6 sessions for phases 1–4. Phase 5 is independent and can wait.**
 
@@ -135,30 +135,30 @@ requires phases 1–3 done. Phase 5 is opt-in polish.
 
 Not blockers, but call them out early so they don't churn mid-phase:
 
-- **Subcommand naming.** Flat (`clanker build`, `clanker validate`)
-  or nested (`clanker contract build`, `clanker contract list`)?
+- **Subcommand naming.** Flat (`imp build`, `imp validate`)
+  or nested (`imp contract build`, `imp contract list`)?
   Flat is simpler and matches `git`'s top-level verb style. Lean
   flat unless we hit a collision.
-- **`--json` flag for text-output commands.** `clanker show` is
+- **`--json` flag for text-output commands.** `imp show` is
   markdown today; if the parent ever wants structured output,
   add `--json` then. Don't pre-design.
-- **Where the skill lives.** `skills/clanker.md` in the repo is
+- **Where the skill lives.** `skills/imp.md` in the repo is
   the source of truth, but Claude Code discovers skills from
   `.claude/skills/` (project) or `~/.claude/skills/` (user). The
   install story should copy or symlink. Decide in phase 2.
 - **Permission UX.** Today every MCP tool call is a separate
   Claude Code prompt. Bash gets prefix-allowlisted, so
-  `clanker *` would unlock all subcommands at once. Document this
+  `imp *` would unlock all subcommands at once. Document this
   as a setup step; it's strictly a UX win after the first
   approval.
 - **`appsettings.json` discovery.** Already loads from
   `AppContext.BaseDirectory` (`Program.cs:44`). Works fine for a
   CLI; no change needed.
-- **Renaming the project.** `McpClanker.csproj` → `Clanker.csproj`
+- **Renaming the project.** `Imp.csproj` → `Imp.csproj`
   is cosmetic. Defer to phase 4 or skip; it'll churn imports but
   buys nothing.
-- **`clanker remove <task-id>` cleanup affordance.** Same theme
-  as `clanker review`: make the right path easier than the wrong
+- **`imp remove <task-id>` cleanup affordance.** Same theme
+  as `imp review`: make the right path easier than the wrong
   one. Today the skill tells the parent to run
   `git worktree remove <path>` + `git branch -D contract/T-NNN`
   by hand, which is friction at exactly the moment the parent
@@ -195,11 +195,11 @@ reads cleanly to a model that has never seen the MCP version.
 Phase 2 budgets a session for that; if it bleeds, the bleed is
 contained.
 
-The fixes shipped on 2026-05-01 (`ClankerLog`, `RunGit` 30s
+The fixes shipped on 2026-05-01 (`ImpLog`, `RunGit` 30s
 timeout) are not predicated on this plan. They help the MCP path
 and the CLI path equally; commit them either way.
 
-The worktree-boundary commitments (`clanker review`, the explicit
+The worktree-boundary commitments (`imp review`, the explicit
 skill section) are the part of this plan most likely to be tested
 in practice. If phase-3 validation shows the parent still
 reaching into the worktree, treat that as a signal about closeout

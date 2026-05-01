@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace McpClanker;
+namespace Imp;
 
 // Second safety gate: intercept bash commands that would make network calls
 // off the host. Pre-flight check mirrors CommandClassifier's shape — a pure

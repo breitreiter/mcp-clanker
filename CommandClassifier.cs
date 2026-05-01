@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace McpClanker;
+namespace Imp;
 
 // Pre-flight danger check for bash commands. Returns a Classification with
 // IsDangerous=true when the command matches a known danger pattern, or when
@@ -8,7 +8,7 @@ namespace McpClanker;
 //
 // Ported from nb/Shell/CommandClassifier.cs, stripped down. nb classifies
 // for display (Read / Write / Append / Delete / Move / Copy / Run) because
-// it shows the user a risk line and asks for approval. clanker is
+// it shows the user a risk line and asks for approval. imp is
 // autonomous — it just needs a yes/no gate to decide whether to block the
 // run. Everything else in nb's classifier was display-layer and is omitted.
 

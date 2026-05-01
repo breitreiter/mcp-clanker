@@ -1,4 +1,4 @@
-namespace McpClanker;
+namespace Imp;
 
 // Estimates USD cost from token counts and model name.
 // Rates are hand-entered placeholders; accuracy is not guaranteed.

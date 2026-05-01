@@ -1,6 +1,6 @@
 # Technical documentation
 
-Mechanical reference for readers who want to understand or extend clanker. Complements, not replaces, the design docs under `project/` (which answer "why" and "where next").
+Mechanical reference for readers who want to understand or extend imp. Complements, not replaces, the design docs under `project/` (which answer "why" and "where next").
 
 ## In this directory
 
@@ -13,7 +13,7 @@ Mechanical reference for readers who want to understand or extend clanker. Compl
 - `executor-v1-research.md` — v1 design decisions with source citations
 - `bucket-a-survey.md` — primary-source scan of adjacent systems (Cursor, Aider, Codex, Devin, Kiro, Spec Kit, …)
 - `v2-plan.md` — the phased path this repo has worked through
-- `spec-kit-integration.md` — exploratory doc on pairing clanker with GitHub Spec Kit
+- `spec-kit-integration.md` — exploratory doc on pairing imp with GitHub Spec Kit
 - `TODO.md` — rolling work queue, annotated with what's shipped
 
 ## Which doc for which question

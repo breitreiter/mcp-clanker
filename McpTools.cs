@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 
-namespace McpClanker;
+namespace Imp;
 
 // Static surface methods invoked by the CLI dispatcher in Program.cs.
 // Originally MCP-tool entry points; the [Description] attributes are
@@ -27,38 +27,38 @@ public static class McpTools
         return response.Text;
     }
 
-    [Description("Executes a contract file through a cheap, slow coding executor (default: Azure GPT-5.1-codex-mini) in a fresh git worktree, and returns a structured proof-of-work JSON. Long-running: minutes to tens of minutes. Persists the proof-of-work to <trace-dir>/proof-of-work.json so `clanker review` can read it later.")]
+    [Description("Executes a contract file through a cheap, slow coding executor (default: Azure GPT-5.1-codex-mini) in a fresh git worktree, and returns a structured proof-of-work JSON. Long-running: minutes to tens of minutes. Persists the proof-of-work to <trace-dir>/proof-of-work.json so `imp review` can read it later.")]
     public static async Task<string> Build(
         IChatClient chat,
         IConfiguration config,
         string contractPath)
     {
-        ClankerLog.Info($"build: start contractPath={contractPath} cwd={Directory.GetCurrentDirectory()}");
+        ImpLog.Info($"build: start contractPath={contractPath} cwd={Directory.GetCurrentDirectory()}");
 
         if (!File.Exists(contractPath))
             return BuildResultJson.Serialize(RejectBuild("T-???", null, null, $"Contract file not found: {contractPath}"));
 
         var markdown = await File.ReadAllTextAsync(contractPath);
         var contract = ContractParser.Parse(markdown);
-        ClankerLog.Info($"build: parsed taskId={contract.TaskId} title={contract.Title}");
+        ImpLog.Info($"build: parsed taskId={contract.TaskId} title={contract.Title}");
 
         var (resolvedTargetRepo, targetRepoError) = ResolveTargetRepo();
         if (resolvedTargetRepo is null)
             return BuildResultJson.Serialize(RejectBuild(contract.TaskId, null, null, targetRepoError!));
-        ClankerLog.Info($"build: targetRepo resolved to {resolvedTargetRepo}");
+        ImpLog.Info($"build: targetRepo resolved to {resolvedTargetRepo}");
 
         var validation = ContractValidator.Validate(contract, resolvedTargetRepo);
         if (!validation.IsValid)
             return BuildResultJson.Serialize(RejectBuild(contract.TaskId, null, null, validation.RejectionReason!));
-        ClankerLog.Info($"build: contract validated taskId={contract.TaskId}");
+        ImpLog.Info($"build: contract validated taskId={contract.TaskId}");
 
         string worktreePath;
         string branch;
         try
         {
-            ClankerLog.Info($"build: creating worktree for {contract.TaskId}");
+            ImpLog.Info($"build: creating worktree for {contract.TaskId}");
             (worktreePath, branch) = Worktree.Create(resolvedTargetRepo, contract.TaskId);
-            ClankerLog.Info($"build: worktree created path={worktreePath} branch={branch}");
+            ImpLog.Info($"build: worktree created path={worktreePath} branch={branch}");
         }
         catch (Exception ex)
         {
@@ -73,7 +73,7 @@ public static class McpTools
         var maxOutputTokens = ParseMaxOutputTokens(providerSection) ?? DefaultMaxOutputTokens;
         var sandbox = SandboxConfig.FromConfiguration(config);
 
-        ClankerLog.Info($"build: executor starting taskId={contract.TaskId} provider={providerName} model={modelName} sandbox={sandbox.Mode}");
+        ImpLog.Info($"build: executor starting taskId={contract.TaskId} provider={providerName} model={modelName} sandbox={sandbox.Mode}");
         var result = await Executor.RunAsync(
             chat: chat,
             contract: contract,
@@ -86,11 +86,11 @@ public static class McpTools
             traceDirectory: traceDirectory,
             sandbox: sandbox,
             ct: CancellationToken.None);
-        ClankerLog.Info($"build: executor completed taskId={contract.TaskId} terminal={result.TerminalState} toolCalls={result.ToolCallCount}");
+        ImpLog.Info($"build: executor completed taskId={contract.TaskId} terminal={result.TerminalState} toolCalls={result.ToolCallCount}");
 
         var json = BuildResultJson.Serialize(result);
 
-        // Persist proof-of-work next to transcript.md so `clanker review`
+        // Persist proof-of-work next to transcript.md so `imp review`
         // can read structured fields without re-executing or scraping
         // trace.jsonl. Best-effort — if the trace dir vanished we still
         // return the JSON to the caller.
@@ -99,11 +99,11 @@ public static class McpTools
             Directory.CreateDirectory(traceDirectory);
             var proofPath = Path.Combine(traceDirectory, "proof-of-work.json");
             await File.WriteAllTextAsync(proofPath, json);
-            ClankerLog.Info($"build: proof-of-work persisted at {proofPath}");
+            ImpLog.Info($"build: proof-of-work persisted at {proofPath}");
         }
         catch (Exception ex)
         {
-            ClankerLog.Warn($"build: failed to persist proof-of-work.json: {ex.GetType().Name}: {ex.Message}");
+            ImpLog.Warn($"build: failed to persist proof-of-work.json: {ex.GetType().Name}: {ex.Message}");
         }
 
         return json;
@@ -154,7 +154,7 @@ public static class McpTools
 
     static BuildResult RejectBuild(string taskId, string? worktreePath, string? branch, string reason)
     {
-        ClankerLog.Warn($"build: rejected taskId={taskId} reason={reason}");
+        ImpLog.Warn($"build: rejected taskId={taskId} reason={reason}");
         var now = DateTime.UtcNow;
         return new BuildResult(
             TaskId: taskId,
@@ -312,7 +312,7 @@ public static class McpTools
 
         if (File.Exists(transcriptPath))
         {
-            sb.AppendLine($"For full executor turn-by-turn detail: `clanker log {taskId}` (or open `{transcriptPath}`).");
+            sb.AppendLine($"For full executor turn-by-turn detail: `imp log {taskId}` (or open `{transcriptPath}`).");
         }
 
         return sb.ToString();

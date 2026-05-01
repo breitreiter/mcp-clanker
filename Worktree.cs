@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace McpClanker;
+namespace Imp;
 
 // Creates a fresh git worktree for a contract run. Path convention:
 //   <target-repo>/../<target-repo-name>.worktrees/<task-id>
@@ -56,7 +56,7 @@ public static class Worktree
     static void RunGit(string cwd, params string[] args)
     {
         var argDisplay = string.Join(' ', args);
-        ClankerLog.Info($"git: invoking `git {argDisplay}` cwd={cwd}");
+        ImpLog.Info($"git: invoking `git {argDisplay}` cwd={cwd}");
 
         using var proc = new Process
         {
@@ -82,7 +82,7 @@ public static class Worktree
         if (!proc.WaitForExit(GitTimeoutMs))
         {
             try { proc.Kill(entireProcessTree: true); } catch { }
-            ClankerLog.Error($"git: TIMEOUT after {GitTimeoutMs}ms `git {argDisplay}` cwd={cwd}");
+            ImpLog.Error($"git: TIMEOUT after {GitTimeoutMs}ms `git {argDisplay}` cwd={cwd}");
             throw new InvalidOperationException(
                 $"git {argDisplay} timed out after {GitTimeoutMs / 1000}s and was killed");
         }
@@ -92,11 +92,11 @@ public static class Worktree
 
         if (proc.ExitCode != 0)
         {
-            ClankerLog.Error($"git: failed exit={proc.ExitCode} `git {argDisplay}` stderr={stderr.Trim()}");
+            ImpLog.Error($"git: failed exit={proc.ExitCode} `git {argDisplay}` stderr={stderr.Trim()}");
             throw new InvalidOperationException(
                 $"git {argDisplay} failed (exit {proc.ExitCode}): {stderr.Trim()}");
         }
 
-        ClankerLog.Info($"git: completed `git {argDisplay}` exit=0");
+        ImpLog.Info($"git: completed `git {argDisplay}` exit=0");
     }
 }

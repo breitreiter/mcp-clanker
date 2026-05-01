@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace McpClanker;
+namespace Imp;
 
 // Regex content search across the contract's working directory. Ported from
 // nb/Shell/GrepTool.cs with two simplifications:
@@ -13,7 +13,7 @@ namespace McpClanker;
 //     in v1; the model can cd down via `path=` instead.
 //
 // Skip-dirs list mirrors nb's. Binary-file detection is the same null-byte
-// heuristic. Output is truncated to clanker's standard 8 KB tool cap.
+// heuristic. Output is truncated to imp's standard 8 KB tool cap.
 
 public static class GrepTool
 {

@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.Text;
 using Microsoft.Extensions.AI;
 
-namespace McpClanker;
+namespace Imp;
 
 // Minimal tool set for v1: bash, read_file, write_file.
 // Safety gates (CommandClassifier, network-egress, apply_patch) come in a
@@ -327,7 +327,8 @@ public static class Tools
     }
 
     // Build the Process that will run the bash command. In Host mode that's
-    // /bin/bash -c <cmd>. In Docker mode it's `docker run --rm` with the
+    // the resolved host bash (`/bin/bash` on Unix, Git Bash on Windows — see
+    // ShellResolver) invoked with `-c <cmd>`. In Docker mode it's `docker run --rm` with the
     // worktree bind-mounted at /work, a shared nuget volume at /root/.nuget/
     // packages, and --network=<configured, default "none">. Kill-on-timeout
     // semantics work in both modes: killing the client process triggers
@@ -340,7 +341,7 @@ public static class Tools
             {
                 StartInfo = new ProcessStartInfo
                 {
-                    FileName = "/bin/bash",
+                    FileName = ShellResolver.Resolve(),
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
@@ -360,7 +361,7 @@ public static class Tools
         // --network defaults to "none" so a compromised or confused run
         // can't exfiltrate; contracts that legitimately need a new
         // package fail the `dotnet restore` and return cleanly — the
-        // parent is expected to handle dep decisions, not clanker.
+        // parent is expected to handle dep decisions, not imp.
         var docker = new Process
         {
             StartInfo = new ProcessStartInfo

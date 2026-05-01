@@ -1,9 +1,9 @@
-namespace McpClanker;
+namespace Imp;
 
 // Codex's apply_patch format — model-native unified-diff-with-envelope that
 // gpt-5.x is specifically trained on. Ported from nb's Shell/ApplyPatch/
 // with three adaptations:
-//   1. No FileReadTracker — clanker runs in a fresh worktree with no
+//   1. No FileReadTracker — imp runs in a fresh worktree with no
 //      concurrent mutation, and we trust the SeekSequence cascade to
 //      report a clean "chunk not found" when the model hallucinates.
 //   2. Resolve() clamps paths inside workingDirectory (matches ReadFile

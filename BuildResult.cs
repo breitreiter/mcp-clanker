@@ -2,7 +2,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace McpClanker;
+namespace Imp;
 
 // Proof-of-work. Shape matches project/BRIEF.md's schema plus two extras
 // (worktree_path, branch) so the parent can navigate straight to the work.

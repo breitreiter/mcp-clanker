@@ -5,7 +5,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Mscc.GenerativeAI.Microsoft;
 
-namespace McpClanker;
+namespace Imp;
 
 // Compile-time dispatch over the providers nb supports. Each section in
 // ChatProviders[] has a Name that matches a case below. Mirrors nb's provider

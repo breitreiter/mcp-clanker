@@ -1,11 +1,11 @@
 ---
-name: clanker
-description: Use when considering whether to delegate a rote, narrow-scoped coding task to clanker's `clanker build` executor (running on cheap/slow Azure GPT-5.1-codex-mini), when writing a clanker contract, or when interpreting a proof-of-work result. Covers the delegate-vs-do-in-context decision, contract structure, reading proof-of-work, blocked-question retry categories, and cost framing.
+name: imp
+description: Use when considering whether to delegate a rote, narrow-scoped coding task to imp's `imp build` executor (running on cheap/slow Azure GPT-5.1-codex-mini), when writing a imp contract, or when interpreting a proof-of-work result. Covers the delegate-vs-do-in-context decision, contract structure, reading proof-of-work, blocked-question retry categories, and cost framing.
 ---
 
-# clanker
+# imp
 
-clanker is a CLI tool that hands a structured *contract* to a cheap,
+imp is a CLI tool that hands a structured *contract* to a cheap,
 slow executor model (default: Azure GPT-5.1-codex-mini) which runs
 it in a fresh git worktree and returns a structured *proof-of-work*.
 Use it to keep Opus budget for judgment work and spend cheap tokens
@@ -13,18 +13,18 @@ on rote grinding.
 
 ## Setup
 
-clanker runs as a bash command. One-time, allow it in Claude Code's
+imp runs as a bash command. One-time, allow it in Claude Code's
 permission settings:
 
 ```
-clanker *
+imp *
 ```
 
 That permits all subcommands; per-subcommand allowlisting works too
-(`clanker build *`, `clanker review *`, etc.) but rarely worth the
+(`imp build *`, `imp review *`, etc.) but rarely worth the
 friction.
 
-Per-invocation the parent runs `clanker <verb> [args]` from the
+Per-invocation the parent runs `imp <verb> [args]` from the
 target repo's root. Each invocation is a fresh process — no
 long-lived MCP subprocess, no state drift between calls.
 
@@ -32,15 +32,15 @@ long-lived MCP subprocess, no state drift between calls.
 
 Lifecycle:
 
-- **`clanker build <contract-path>`** — runs the executor against a
+- **`imp build <contract-path>`** — runs the executor against a
   contract. Long-running (minutes to tens of minutes). Emits
   proof-of-work JSON to stdout. Persists `proof-of-work.json`,
   `transcript.md`, and `trace.jsonl` to the trace dir.
-- **`clanker validate <contract-path>`** — dry-run: parses the
+- **`imp validate <contract-path>`** — dry-run: parses the
   contract and checks structural validity + scope-file existence,
   no model call. Emits validation JSON to stdout. Use before
   `build` to catch contract errors without paying for a turn.
-- **`clanker review <task-id>`** — the canonical post-build view.
+- **`imp review <task-id>`** — the canonical post-build view.
   Emits a markdown bundle: proof-of-work JSON + `git diff
   HEAD...contract/T-NNN`. **This is what you run after `build` —
   not "navigate into the worktree."** See "Parent's relationship
@@ -48,20 +48,20 @@ Lifecycle:
 
 Inspection:
 
-- **`clanker list`** — JSON array of contracts under
+- **`imp list`** — JSON array of contracts under
   `./contracts/*.md` with task IDs and titles.
-- **`clanker show <task-id>`** — prints the contract markdown.
-- **`clanker log <task-id>`** — prints the rendered transcript of
+- **`imp show <task-id>`** — prints the contract markdown.
+- **`imp log <task-id>`** — prints the rendered transcript of
   the most recent run. Use when proof-of-work notes aren't enough
   to diagnose what happened.
-- **`clanker template <name>`** — prints a template (`contract` or
+- **`imp template <name>`** — prints a template (`contract` or
   `proof-of-work`). Pipe to a file to start a new contract:
-  `clanker template contract > contracts/T-NNN-slug.md`.
+  `imp template contract > contracts/T-NNN-slug.md`.
 
 Diagnostics:
 
-- **`clanker ping [provider]`** — smoke-test provider round-trip.
-- **`clanker ping-tools [provider]`** — verify multi-turn tool-call
+- **`imp ping [provider]`** — smoke-test provider round-trip.
+- **`imp ping-tools [provider]`** — verify multi-turn tool-call
   round-tripping.
 
 Build-time sidecar artefacts (per task):
@@ -70,12 +70,12 @@ Build-time sidecar artefacts (per task):
 - `<parent>/<repo>.worktrees/<T-NNN>.trace/proof-of-work.json` — structured result
 - `<parent>/<repo>.worktrees/<T-NNN>.trace/transcript.md` — human-readable run log
 - `<parent>/<repo>.worktrees/<T-NNN>.trace/trace.jsonl` — forensic JSONL
-- `<exe-dir>/clanker.log` — append-only host-side log of every CLI invocation
+- `<exe-dir>/imp.log` — append-only host-side log of every CLI invocation
 
 ## Parent's relationship to the worktree
 
 **The worktree is a PR-shaped artefact, not a workspace.** When you
-delegate work to clanker, your job is to evaluate the result, not
+delegate work to imp, your job is to evaluate the result, not
 to redo it. Reading source files inside the worktree, or — worse
 — editing them, breaks three things at once:
 
@@ -88,13 +88,13 @@ to redo it. Reading source files inside the worktree, or — worse
 
 Your interaction with a finished build is, in order:
 
-1. Read the proof-of-work JSON returned by `clanker build` — start
+1. Read the proof-of-work JSON returned by `imp build` — start
    with `terminal_state`, then `acceptance[]` verdicts, then
    `notes`.
-2. Run **`clanker review <task-id>`** for the bundled view: the
+2. Run **`imp review <task-id>`** for the bundled view: the
    proof-of-work plus `git diff HEAD...contract/T-NNN`. One screen
    of markdown. This is the right command nine times out of ten.
-3. Run **`clanker log <task-id>`** *only if* steps 1–2 surfaced
+3. Run **`imp log <task-id>`** *only if* steps 1–2 surfaced
    something suspicious. The transcript carries every turn the
    executor took.
 4. Decide: merge, cherry-pick, request a revision contract, or
@@ -131,13 +131,13 @@ Don't delegate:
 - Design decisions, API-shape choices, or anything judgment-heavy.
 - Vague goals ("clean up X", "improve Y").
 - Tasks where one wrong early step cascades (architecture changes).
-- **Anything that adds a new package dependency** (`dotnet add package`, `npm install <new>`, `cargo add`, etc.). When clanker runs in its Docker sandbox, the container has no network — only packages already in the cache work. Packages the project hasn't adopted yet will fail to restore. That's deliberate: package-adoption is a judgment call you own, not something to delegate. Adopt the dep yourself, then delegate the work that uses it.
+- **Anything that adds a new package dependency** (`dotnet add package`, `npm install <new>`, `cargo add`, etc.). When imp runs in its Docker sandbox, the container has no network — only packages already in the cache work. Packages the project hasn't adopted yet will fail to restore. That's deliberate: package-adoption is a judgment call you own, not something to delegate. Adopt the dep yourself, then delegate the work that uses it.
 
 Heuristic: if you can't write crisp Acceptance bullets in under a minute, the contract isn't ready.
 
 ## Writing a contract
 
-Run `clanker template contract` for the skeleton. Sections:
+Run `imp template contract` for the skeleton. Sections:
 
 - **Goal:** one sentence — what changes in the world when this is done.
 - **Scope:** exhaustive, explicit. `- edit: path` / `- create: path` / `- delete: path`. Scope is the single biggest lever on tool-call count and drift. Be ruthless.
@@ -146,7 +146,7 @@ Run `clanker template contract` for the skeleton. Sections:
 - **Acceptance:** concrete, verifiable checks. "All existing tests pass." "New tests cover case A, B, C." "No changes to files outside Scope."
 - **Non-goals:** cheap to write, high leverage — they prevent rabbit-holing. List what this contract explicitly does NOT do.
 
-Save at `<target-repo>/contracts/T-NNN-slug.md` (convention; not enforced). Pick `T-NNN` as the next unused task number — `clanker list` shows what's taken.
+Save at `<target-repo>/contracts/T-NNN-slug.md` (convention; not enforced). Pick `T-NNN` as the next unused task number — `imp list` shows what's taken.
 
 Common contract mistakes:
 - Scope too broad (`- edit: src/`) — the executor will wander. List specific files.
@@ -156,19 +156,19 @@ Common contract mistakes:
 ## Running a build
 
 1. Write the contract file.
-2. `clanker validate <contract-path>` to confirm it parses and the scope files exist.
-3. `clanker build <contract-path>`. It blocks for minutes to tens of minutes; go do something else.
+2. `imp validate <contract-path>` to confirm it parses and the scope files exist.
+3. `imp build <contract-path>`. It blocks for minutes to tens of minutes; go do something else.
 4. Read the proof-of-work JSON that comes back on stdout.
-5. `clanker review <task-id>` for the bundled diff + summary.
+5. `imp review <task-id>` for the bundled diff + summary.
 
 The worktree is on a branch `contract/T-NNN`. It is not automatically cleaned up — merge, cherry-pick, or `git worktree remove` yourself.
 
-**Target repo:** clanker operates on the current working directory.
+**Target repo:** imp operates on the current working directory.
 The intended flow is one Claude Code session per target repo, so cwd is implicit. There's no override flag — `cd` if you need to.
 
 ## Reading proof-of-work
 
-Shape (see `clanker template proof-of-work` for full schema). Check in this order:
+Shape (see `imp template proof-of-work` for full schema). Check in this order:
 
 1. **`terminal_state`**: `success` | `failure` | `rejected` | `blocked`.
    - `success` — executor completed AND an independent closeout reviewer verified every Acceptance bullet. `acceptance[]` carries closeout's verdicts with citations; `sub_agents_spawned[]` has a `{role: closeout, verdict: pass|mixed|fail}` entry.
@@ -186,9 +186,9 @@ Shape (see `clanker template proof-of-work` for full schema). Check in this orde
 
 6. **`estimated_cost_usd`**, **`tokens_input_total`**, **`tokens_output_total`**: rough signal on spend. Cost is a hand-rated placeholder — order-of-magnitude only.
 
-7. **`transcript_path`**, **`worktree_path`**, **`branch`**: pointers, not destinations to dig into. `clanker review <task-id>` already bundles what you need; `clanker log <task-id>` opens the transcript when you need turn-by-turn detail.
+7. **`transcript_path`**, **`worktree_path`**, **`branch`**: pointers, not destinations to dig into. `imp review <task-id>` already bundles what you need; `imp log <task-id>` opens the transcript when you need turn-by-turn detail.
 
-Trust closeout verdicts. Spot-check the diff via `clanker review` if `terminal_state=success` but something in `notes` or `scope_adherence` looks off — but don't reflexively re-read source files in the worktree just because you can.
+Trust closeout verdicts. Spot-check the diff via `imp review` if `terminal_state=success` but something in `notes` or `scope_adherence` looks off — but don't reflexively re-read source files in the worktree just because you can.
 
 ## The retry loop
 
@@ -202,7 +202,7 @@ When `terminal_state=blocked`, `blocked_question.category` tells you what to do:
 
 When `terminal_state=rejected`: read `rejection_reason`. Fix the contract structurally — usually a missing section or a scope file that doesn't exist — and re-run.
 
-When `terminal_state=failure`: `clanker log <task-id>` for the transcript, decide whether to re-run (maybe with tighter Scope) or abandon.
+When `terminal_state=failure`: `imp log <task-id>` for the transcript, decide whether to re-run (maybe with tighter Scope) or abandon.
 
 Before re-running: `git worktree remove <worktree_path>` and `git branch -D contract/T-NNN`, or the next build on the same task id will fail "worktree path already exists."
 
@@ -210,7 +210,7 @@ Before re-running: `git worktree remove <worktree_path>` and `git branch -D cont
 
 Why delegate at all:
 - Executing in-context on Opus: roughly $1–5 per non-trivial task.
-- Delegating via `clanker build`: typically $0.03–0.30.
+- Delegating via `imp build`: typically $0.03–0.30.
 - The other half of the value: while the cheap executor grinds, Opus is free to do something else.
 
 When in doubt: if a task is on the boundary between "delegate" and "do in-context," bias toward delegation when the task is clearly-scoped and toward in-context when it's exploratory or judgment-heavy.
@@ -231,13 +231,13 @@ Keep these in mind when interpreting results:
 | Step | Action |
 |---|---|
 | Decide to delegate | Scope listable? Acceptance writable in 3–6 bullets? Mechanical work? |
-| Draft contract | `clanker template contract > contracts/T-NNN-slug.md`; fill all six sections |
-| Validate | `clanker validate contracts/T-NNN-slug.md` |
-| Run | `clanker build contracts/T-NNN-slug.md` |
+| Draft contract | `imp template contract > contracts/T-NNN-slug.md`; fill all six sections |
+| Validate | `imp validate contracts/T-NNN-slug.md` |
+| Run | `imp build contracts/T-NNN-slug.md` |
 | Read result | `terminal_state` → `scope_adherence` → `files_changed` → `notes` |
-| Inspect | `clanker review T-NNN` (bundled diff + proof) |
-| Deeper inspect | `clanker log T-NNN` (full transcript) |
+| Inspect | `imp review T-NNN` (bundled diff + proof) |
+| Deeper inspect | `imp log T-NNN` (full transcript) |
 | Retry | Match `blocked_question.category` to the action above |
 | Clean up | `git worktree remove` + `git branch -D contract/T-NNN` when done |
 
-The cardinal rule: **`clanker review`, not Read into the worktree.**
+The cardinal rule: **`imp review`, not Read into the worktree.**
