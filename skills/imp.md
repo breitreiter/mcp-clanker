@@ -155,6 +155,8 @@ Common contract mistakes:
 
 ## Running a build
 
+**Pre-flight: `git status` must be clean in the main checkout.** imp creates the worktree from `HEAD`. Uncommitted or unstaged changes in the main checkout aren't in the worktree (so the executor can't see them) and reconciling them across two divergent trees afterwards is fiddly — stashing back and forth is the usual way it goes wrong. Commit your in-flight work, or stash with explicit intent to pop it later, *before* running `imp build`.
+
 1. Write the contract file.
 2. `imp validate <contract-path>` to confirm it parses and the scope files exist.
 3. `imp build <contract-path>`. It blocks for minutes to tens of minutes; go do something else.
@@ -232,6 +234,7 @@ Keep these in mind when interpreting results:
 |---|---|
 | Decide to delegate | Scope listable? Acceptance writable in 3–6 bullets? Mechanical work? |
 | Draft contract | `imp template contract > contracts/T-NNN-slug.md`; fill all six sections |
+| Pre-flight | `git status` clean in the main checkout — commit (or intentionally stash) before running |
 | Validate | `imp validate contracts/T-NNN-slug.md` |
 | Run | `imp build contracts/T-NNN-slug.md` |
 | Read result | `terminal_state` → `scope_adherence` → `files_changed` → `notes` |

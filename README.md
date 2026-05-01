@@ -106,13 +106,22 @@ Run `imp help` for the full subcommand reference. The surface, in three groups:
 
 ### Install the Claude Code skill
 
-The `skills/imp.md` file in this repo teaches Claude Code when to delegate, how to write contracts, how to interpret proof-of-work, and the `blocked_question.category` retry loop. Install it once at user scope so it's active in any repo where `imp` is on PATH:
+The `skills/imp.md` file in this repo teaches Claude Code when to delegate, how to write contracts, how to interpret proof-of-work, and the `blocked_question.category` retry loop. Install it once at user scope so it's active in any repo where `imp` is on PATH.
+
+**Linux / macOS** — install as a skill (auto-loads when relevant):
 
 ```bash
 mkdir -p ~/.claude/skills
 ln -s "$(pwd)/skills/imp.md" ~/.claude/skills/imp.md
 # or copy instead of symlink if you'd rather not track repo edits:
 #   cp skills/imp.md ~/.claude/skills/imp.md
+```
+
+**Windows** — install as a slash command at `%USERPROFILE%\.claude\commands\imp.md` and invoke manually with `/imp`:
+
+```cmd
+mkdir "%USERPROFILE%\.claude\commands"
+copy skills\imp.md "%USERPROFILE%\.claude\commands\imp.md"
 ```
 
 ### Build the Docker sandbox (optional, recommended for real use)
