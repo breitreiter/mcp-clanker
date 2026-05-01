@@ -1,15 +1,27 @@
-# nb-build: design doc
+# imp: design doc (original seed)
 
-A structured work-execution system layered on top of the existing `nb` CLI
-coding agent. Turns an Opus/Claude Code planning session into a queue of
-contracts that a cheap, slow model (GPT-54 on Azure) can grind through
-reliably, with automated closeout verification and structured proof-of-work
-returned on completion.
+> **⚠ Stale (2026-05-01).** This is the original seed doc — written when
+> the project was going to be called `nb-build`, layer on top of `nb`,
+> and expose itself to Claude Code as `nb-mcp` over stdio MCP. The
+> high-level framing — the cost model, the contract artifact, the
+> proof-of-work artifact, the build state machine, the sub-agent design
+> — all still apply. The implementation details have moved on:
+> imp grew its own executor instead of wrapping nb's, the MCP layer was
+> replaced with a bash CLI invoked via a skill, and the cheap executor
+> is now Azure GPT-5.1-codex-mini (not "GPT-54"). For current
+> architecture see `CLAUDE.md` and `docs/architecture.md`; for the
+> rewrite history see `cli-plan.md`. Sections describing nb-mcp, the
+> MCP tool surface, and "reuse from nb" are kept as historical context.
 
-This doc exists to seed the repo. It describes the architecture, the data
-formats, what to build new, what to reuse from `nb`, and what's explicitly
-out of scope. Hand this to Claude Code alongside access to the existing
-`nb` repo and it should have enough to scaffold.
+A structured work-execution system. Turns an Opus/Claude Code planning
+session into a queue of contracts that a cheap, slow model (originally
+"GPT-54 on Azure"; now Azure GPT-5.1-codex-mini) can grind through
+reliably, with automated closeout verification and structured
+proof-of-work returned on completion.
+
+This doc exists to seed the repo. It describes the architecture, the
+data formats, what to build new, what to reuse from `nb`, and what's
+explicitly out of scope.
 
 ## Problem this solves
 

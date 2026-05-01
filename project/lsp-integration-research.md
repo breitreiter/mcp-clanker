@@ -153,7 +153,7 @@ for the bigger build.
 - **Not a Claude Code plugin-bundle thing.** OpenClaw's other argument
   — that LSP belongs in the host because Claude Code plugin bundles
   declare `.lsp.json` next to `.mcp.json` — is about plugin authoring.
-  Imp is a standalone MCP server, not a Claude Code plugin bundle.
+  Imp is a standalone CLI tool, not a Claude Code plugin bundle.
   If a future user wants to bring their own LSP config, reading a
   `.lsp.json` from the target worktree is a tiny convenience that rides
   on a known convention; it's not a driver for this work.

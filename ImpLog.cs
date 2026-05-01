@@ -2,7 +2,7 @@ using System.Text;
 
 namespace Imp;
 
-// Tiny file-and-stderr logger. Persists across MCP subprocess restarts so
+// Tiny file-and-stderr logger. Persists across CLI invocations so
 // failures (especially pre-worktree ones, which never reach trace.jsonl)
 // leave a forensic trail even when the host shell doesn't capture stderr.
 //

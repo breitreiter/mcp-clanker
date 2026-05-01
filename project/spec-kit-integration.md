@@ -71,7 +71,7 @@ roughly in order of ambition:
 - **Opus-side skill** synthesizes a contract from the task line + `spec.md`
   + `plan.md` context, then calls `build()`. No changes to imp.
   Skill lives in the Claude Code project. *Simplest.*
-- **New MCP tool**: `compile_contract(tasksFile, taskId) → contract.md`.
+- **New CLI subcommand**: `imp compile-contract <tasks-file> <task-id> → contract.md`.
   Reads task line, pulls matching user story from `spec.md`, pulls
   relevant plan section, emits a contract. Imp stays
   orchestrator-agnostic but gains Spec-Kit-aware plumbing.
@@ -113,11 +113,10 @@ pass/fail with evidence. Only then does the checkbox flip.
 
 ### 4. Checkbox flip on verified success
 
-New MCP tool, proposed signature:
+New CLI subcommand, proposed signature:
 
-```csharp
-[McpServerTool]
-mark_task_done(string tasksFile, string taskId, string buildResultJson)
+```
+imp mark-task-done <tasks-file> <task-id> <build-result-json>
 ```
 
 Parses the proof-of-work. Flips `- [ ] T-NNN ...` to `- [x]` only if:
@@ -206,7 +205,7 @@ surveyed. Spec Kit's weaknesses (checkbox-equals-done, no
 enforcement) are exactly imp's strengths (verification, scope
 enforcement, forensic trace). The integration surface is small: a
 bridge that expands task lines into contracts, ambient-context
-injection for `constitution.md`, a checkbox-flip MCP tool gated on
+injection for `constitution.md`, a checkbox-flip subcommand gated on
 verified success.
 
 We don't need to commit to this now. But if we do commit, the

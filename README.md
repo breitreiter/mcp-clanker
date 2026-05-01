@@ -1,6 +1,6 @@
 # imp
 
-C# stdio MCP server that hands structured coding tasks (*contracts*) from Claude Code to a cheaper executor model. Intended for rote, well-scoped work you don't want to burn Opus tokens on.
+C# CLI tool that hands structured coding tasks (*contracts*) from Claude Code to a cheaper executor model. Intended for rote, well-scoped work you don't want to burn Opus tokens on.
 
 ## Status
 
@@ -11,12 +11,12 @@ C# stdio MCP server that hands structured coding tasks (*contracts*) from Claude
 - **Full toolkit** — `bash`, `read_file`, `write_file`, `apply_patch` (codex sentinel format, preferred for GPT-family models), `grep`, `list_dir`, `todo_read`, `todo_write`.
 - **Docker sandbox** — opt-in per-command containerization with `--network=none` and a shared nuget cache volume. Packages already downloaded work offline; genuinely-new packages fail to restore so the parent owns package-adoption decisions, not the executor.
 
-Remaining gaps before GA: a `**Allowed network:**` contract declaration (so contracts that genuinely need network can opt in), config-driven `MaxOutputTokens` per provider, Windows shell detection, MCP-server hot-reload shim for faster iteration. See `project/TODO.md`.
+Remaining gaps before GA: a `**Allowed network:**` contract declaration (so contracts that genuinely need network can opt in), and removal of the `build(targetRepo)` dev escape hatch. See `project/TODO.md`.
 
 ## What it does
 
-1. Claude Code (Opus-scale planning) writes a **contract** — a markdown file describing a focused change: goal, explicit file scope, contract body, acceptance criteria, non-goals. Template at `Templates/contract.md` and exposed as the MCP resource `template://contract`.
-2. `imp`'s `build` tool parses the contract, creates a fresh git **worktree** on a new branch (`contract/T-NNN`) in the target repo, and runs an **executor** — a tool-calling loop against the configured provider (primary target: Azure Foundry / gpt-5.1-codex-mini).
+1. Claude Code (Opus-scale planning) writes a **contract** — a markdown file describing a focused change: goal, explicit file scope, contract body, acceptance criteria, non-goals. Template at `Templates/contract.md`, printable via `imp template contract`.
+2. `imp build` parses the contract, creates a fresh git **worktree** on a new branch (`contract/T-NNN`) in the target repo, and runs an **executor** — a tool-calling loop against the configured provider (primary target: Azure Foundry / gpt-5.1-codex-mini).
 3. Safety gates pre-flight every bash command and watch the tool-call history for loops. Any breach terminates the run with a structured `blocked_question`.
 4. After the executor terminates cleanly, a one-turn **self-check** asks the model to report pass/fail per acceptance bullet with a citation, then a fresh-context **closeout reviewer** independently verifies each bullet against the actual worktree diff.
 5. Returns a **proof-of-work** JSON: terminal state, tool-call count, token usage, estimated cost, files changed, scope-adherence report, closeout verdicts with citations, worktree + branch + trace paths. A full execution **trace** (JSONL) and a rendered **transcript** (md) land in a sidecar directory for forensic reading.
@@ -39,7 +39,7 @@ Configured via `appsettings.json`. See `appsettings.example.json` for shape.
 
 - .NET 8 SDK
 - `git`
-- Linux or macOS. Windows support is planned but not wired — see `project/TODO.md`.
+- Linux, macOS, or Windows (Git Bash required on Windows for host mode).
 - Docker (optional — only if you want the sandbox isolation described below; host mode works without it)
 - Credentials for at least one supported provider
 
@@ -60,15 +60,16 @@ dotnet build
 ### Smoke-test provider wiring
 
 ```bash
-dotnet run -- --ping                  # uses ActiveProvider from config
-dotnet run -- --ping AzureFoundry     # override
+dotnet run -- ping                  # uses ActiveProvider from config
+dotnet run -- ping AzureFoundry     # override
+dotnet run -- ping-tools            # verify multi-turn tool-calling round-trips
 ```
 
 ### Exercise the build loop from the CLI
 
 ```bash
-dotnet run -- --build path/to/contract.md
-dotnet run -- --build path/to/contract.md AzureFoundry
+dotnet run -- build path/to/contract.md
+dotnet run -- build path/to/contract.md AzureFoundry
 ```
 
 The build command creates a worktree at `<parent>/<repo>.worktrees/<task-id>/` and a trace sidecar at `<parent>/<repo>.worktrees/<task-id>.trace/` (JSONL + rendered transcript). Neither is cleaned up automatically.
@@ -76,44 +77,36 @@ The build command creates a worktree at `<parent>/<repo>.worktrees/<task-id>/` a
 ### Regenerate a transcript from a trace
 
 ```bash
-dotnet run -- --render-transcript <parent>/<repo>.worktrees/<task-id>.trace/trace.jsonl
+dotnet run -- render-transcript <parent>/<repo>.worktrees/<task-id>.trace/trace.jsonl
 ```
 
 Writes `transcript.md` next to the input. Useful for older traces written before the renderer shipped, or for iterating on the renderer itself.
 
-### Via Claude Code MCP
+### Via Claude Code
 
-Register the server in your Claude Code MCP config:
+imp is invoked from Claude Code as a Bash command, paired with the skill at `skills/imp.md` (install instructions below). Each invocation is a fresh process — no long-lived server, no DLL locks, no restart to pick up tool changes.
 
-```json
-{
-  "mcpServers": {
-    "imp": {
-      "type": "stdio",
-      "command": "dotnet",
-      "args": ["run", "--project", "/absolute/path/to/imp"]
-    }
-  }
-}
-```
+Run `imp help` for the full subcommand reference. The surface, in three groups:
 
-The server exposes:
-
-| Tool | What |
+| Subcommand | What |
 |---|---|
-| `ping` | Smoke-test the configured provider |
-| `build(contractPath, [targetRepo])` | Run a contract end-to-end; returns proof-of-work JSON |
-| `validate_contract(contractPath, [targetRepo])` | Parse + validate without executing |
-| `list_tasks([targetRepo])` | List contracts under `<target>/contracts/` |
-| `get_contract(taskId, [targetRepo])` | Return a contract's raw markdown by task ID |
-| `get_log(taskId, [targetRepo])` | Return the rendered transcript of a task's most recent run |
-| `update_contract(contractPath, content)` | Write a contract file |
-
-Plus two MCP resources: `template://contract` (skeleton for a new contract) and `template://proof-of-work` (example of what `build` returns).
+| **Lifecycle** | |
+| `imp build <contract-path> [provider]` | Run a contract end-to-end; emits proof-of-work JSON to stdout |
+| `imp validate <contract-path>` | Parse + structural check, no model call |
+| `imp review <task-id>` | Bundled post-build view: proof-of-work + git diff |
+| **Inspection** | |
+| `imp list` | List contracts under `./contracts/*.md` (JSON) |
+| `imp show <task-id>` | Print a contract's raw markdown |
+| `imp log <task-id>` | Print the rendered transcript of the most recent run |
+| `imp template <name>` | Print a template skeleton — `contract` or `proof-of-work` |
+| **Diagnostics** | |
+| `imp ping [provider]` | Smoke-test the configured provider |
+| `imp ping-tools [provider]` | Verify multi-turn tool-calling round-trips |
+| `imp render-transcript <trace-jsonl>` | Re-render `transcript.md` from an existing `trace.jsonl` |
 
 ### Install the Claude Code skill
 
-The `skills/imp.md` file in this repo teaches Claude Code when to delegate, how to write contracts, how to interpret proof-of-work, and the `blocked_question.category` retry loop. Install it once at user scope so it's active in any repo where the MCP server is registered:
+The `skills/imp.md` file in this repo teaches Claude Code when to delegate, how to write contracts, how to interpret proof-of-work, and the `blocked_question.category` retry loop. Install it once at user scope so it's active in any repo where `imp` is on PATH:
 
 ```bash
 mkdir -p ~/.claude/skills
@@ -121,8 +114,6 @@ ln -s "$(pwd)/skills/imp.md" ~/.claude/skills/imp.md
 # or copy instead of symlink if you'd rather not track repo edits:
 #   cp skills/imp.md ~/.claude/skills/imp.md
 ```
-
-Restart the Claude Code session after installing so the skill is picked up.
 
 ### Build the Docker sandbox (optional, recommended for real use)
 
@@ -150,8 +141,8 @@ First cold-cache run pays the full nuget download; subsequent runs hit the volum
 ```
 imp/
 ├── Imp.csproj
-├── Program.cs              # stdio MCP server + --ping / --build / --render-transcript CLI
-├── McpTools.cs             # MCP-exposed tools (build, validate_contract, get_contract, …)
+├── Program.cs              # CLI entry point; subcommand dispatcher
+├── McpTools.cs             # CLI handlers (build, validate_contract, …); filename predates the rewrite, rename deferred
 ├── Executor.cs             # main tool-call loop, self-check, closeout phases
 ├── Contract.cs             # contract markdown parser + validator
 ├── BuildResult.cs          # proof-of-work DTO + JSON serializer
@@ -171,7 +162,7 @@ imp/
 ├── Prompts.cs              # system-prompt loader
 ├── Providers.cs            # provider factory
 ├── Prompts/                # system-prompt templates (default, AzureFoundry, closeout)
-├── Templates/              # MCP resource payloads (contract.md, proof-of-work.json)
+├── Templates/              # contract + proof-of-work skeletons (printable via `imp template`)
 ├── sandbox/                # Dockerfile + build.sh for the execution sandbox
 ├── skills/imp.md       # Claude Code skill — install to ~/.claude/skills/
 ├── appsettings.example.json

@@ -50,7 +50,7 @@ public static class Worktree
     // sub-second; minutes means something on the OS side is wedged
     // (antivirus, credential helper waiting on a hidden window, stale
     // .git/worktrees lock). Surface as a rejection rather than hang the
-    // MCP request forever.
+    // CLI invocation forever.
     const int GitTimeoutMs = 30_000;
 
     static void RunGit(string cwd, params string[] args)
