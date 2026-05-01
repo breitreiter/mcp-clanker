@@ -1,6 +1,15 @@
 # Architecture
 
-How mcp-clanker turns a contract markdown file into a verified piece of code change. Mechanical, top-down.
+> **⚠ Stale (2026-05-01).** This doc describes the pre-CLI MCP-stdio
+> architecture. The MCP layer was removed; clanker is now a bash CLI
+> invoked from Claude Code via the `clanker` skill (see
+> `skills/clanker.md` for the user-facing surface, `project/cli-plan.md`
+> for the rewrite plan). The build-flow / executor / sandbox / safety-gate
+> sections below are still substantively correct — only the *transport*
+> changed (MCP stdio → CLI subprocess). Treat the "MCP tool call
+> arrives" framing as historical until this doc is rewritten.
+
+How clanker turns a contract markdown file into a verified piece of code change. Mechanical, top-down.
 
 ## Mental model
 

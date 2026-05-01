@@ -1,25 +1,121 @@
 ---
 name: clanker
-description: Use when considering whether to delegate a rote, narrow-scoped coding task to clanker's build() executor (running on cheap/slow Azure GPT-5.1-codex-mini), when writing a clanker contract, or when interpreting a proof-of-work result. Covers the delegate-vs-do-in-context decision, contract structure, reading proof-of-work, blocked-question retry categories, and cost framing.
+description: Use when considering whether to delegate a rote, narrow-scoped coding task to clanker's `clanker build` executor (running on cheap/slow Azure GPT-5.1-codex-mini), when writing a clanker contract, or when interpreting a proof-of-work result. Covers the delegate-vs-do-in-context decision, contract structure, reading proof-of-work, blocked-question retry categories, and cost framing.
 ---
 
 # clanker
 
-mcp-clanker is an MCP server that hands a structured *contract* to a cheap, slow executor model (default: Azure GPT-5.1-codex-mini) which runs it in a fresh git worktree and returns a structured *proof-of-work*. Use it to keep Opus budget for judgment work and spend cheap tokens on rote grinding.
+clanker is a CLI tool that hands a structured *contract* to a cheap,
+slow executor model (default: Azure GPT-5.1-codex-mini) which runs
+it in a fresh git worktree and returns a structured *proof-of-work*.
+Use it to keep Opus budget for judgment work and spend cheap tokens
+on rote grinding.
 
-## MCP surface
+## Setup
 
-Exposed by the `mcp-clanker` server:
+clanker runs as a bash command. One-time, allow it in Claude Code's
+permission settings:
 
-- `build(contractPath)` — **long-running** (minutes to tens of minutes). Creates a worktree, runs the executor, returns proof-of-work JSON.
-- `validate_contract(contractPath)` — dry-run (stub today).
-- `list_tasks()`, `get_contract(taskId)`, `get_log(taskId)`, `update_contract(...)` — stubs today.
-- Resources: `template://contract`, `template://proof-of-work`.
+```
+clanker *
+```
 
-Build-time sidecar artifacts:
+That permits all subcommands; per-subcommand allowlisting works too
+(`clanker build *`, `clanker review *`, etc.) but rarely worth the
+friction.
+
+Per-invocation the parent runs `clanker <verb> [args]` from the
+target repo's root. Each invocation is a fresh process — no
+long-lived MCP subprocess, no state drift between calls.
+
+## CLI reference
+
+Lifecycle:
+
+- **`clanker build <contract-path>`** — runs the executor against a
+  contract. Long-running (minutes to tens of minutes). Emits
+  proof-of-work JSON to stdout. Persists `proof-of-work.json`,
+  `transcript.md`, and `trace.jsonl` to the trace dir.
+- **`clanker validate <contract-path>`** — dry-run: parses the
+  contract and checks structural validity + scope-file existence,
+  no model call. Emits validation JSON to stdout. Use before
+  `build` to catch contract errors without paying for a turn.
+- **`clanker review <task-id>`** — the canonical post-build view.
+  Emits a markdown bundle: proof-of-work JSON + `git diff
+  HEAD...contract/T-NNN`. **This is what you run after `build` —
+  not "navigate into the worktree."** See "Parent's relationship
+  to the worktree" below.
+
+Inspection:
+
+- **`clanker list`** — JSON array of contracts under
+  `./contracts/*.md` with task IDs and titles.
+- **`clanker show <task-id>`** — prints the contract markdown.
+- **`clanker log <task-id>`** — prints the rendered transcript of
+  the most recent run. Use when proof-of-work notes aren't enough
+  to diagnose what happened.
+- **`clanker template <name>`** — prints a template (`contract` or
+  `proof-of-work`). Pipe to a file to start a new contract:
+  `clanker template contract > contracts/T-NNN-slug.md`.
+
+Diagnostics:
+
+- **`clanker ping [provider]`** — smoke-test provider round-trip.
+- **`clanker ping-tools [provider]`** — verify multi-turn tool-call
+  round-tripping.
+
+Build-time sidecar artefacts (per task):
+
 - `<parent>/<repo>.worktrees/<T-NNN>/` — the worktree
-- `<parent>/<repo>.worktrees/<T-NNN>.trace/trace.jsonl` — forensic JSONL trace
-- `<parent>/<repo>.worktrees/<T-NNN>.trace/transcript.md` — human-readable transcript
+- `<parent>/<repo>.worktrees/<T-NNN>.trace/proof-of-work.json` — structured result
+- `<parent>/<repo>.worktrees/<T-NNN>.trace/transcript.md` — human-readable run log
+- `<parent>/<repo>.worktrees/<T-NNN>.trace/trace.jsonl` — forensic JSONL
+- `<exe-dir>/clanker.log` — append-only host-side log of every CLI invocation
+
+## Parent's relationship to the worktree
+
+**The worktree is a PR-shaped artefact, not a workspace.** When you
+delegate work to clanker, your job is to evaluate the result, not
+to redo it. Reading source files inside the worktree, or — worse
+— editing them, breaks three things at once:
+
+- **Cost premise.** You paid the executor *and* paid Opus to redo
+  the work.
+- **Trust premise.** Closeout exists exactly so you don't need to
+  spot-check.
+- **Concurrency benefit.** Opus is supposed to do other work while
+  cheap grinds, not babysit the diff.
+
+Your interaction with a finished build is, in order:
+
+1. Read the proof-of-work JSON returned by `clanker build` — start
+   with `terminal_state`, then `acceptance[]` verdicts, then
+   `notes`.
+2. Run **`clanker review <task-id>`** for the bundled view: the
+   proof-of-work plus `git diff HEAD...contract/T-NNN`. One screen
+   of markdown. This is the right command nine times out of ten.
+3. Run **`clanker log <task-id>`** *only if* steps 1–2 surfaced
+   something suspicious. The transcript carries every turn the
+   executor took.
+4. Decide: merge, cherry-pick, request a revision contract, or
+   abandon. Then clean up: `git worktree remove <worktree-path>`
+   and `git branch -D contract/T-NNN`.
+
+If you find yourself opening individual source files inside
+`<repo>.worktrees/T-NNN/` with `Read`, that's a smell. Three
+likely causes, in priority order:
+
+- The contract was underspecified (Scope or Acceptance was vague,
+  so closeout had nothing concrete to verify against).
+- Closeout missed something (rare; if it happens repeatedly, log
+  it as a closeout-trust issue).
+- The work shouldn't have been delegated (the task was actually
+  judgment-heavy or exploratory and the contract obscured that).
+
+Fix the upstream cause — don't fix the diff in-place. The right
+response to a bad delegation is a better contract or a decision
+not to delegate, not Opus quietly redoing the work in the same
+worktree.
 
 ## When to delegate
 
@@ -41,7 +137,7 @@ Heuristic: if you can't write crisp Acceptance bullets in under a minute, the co
 
 ## Writing a contract
 
-Fetch `template://contract` as the skeleton. Sections:
+Run `clanker template contract` for the skeleton. Sections:
 
 - **Goal:** one sentence — what changes in the world when this is done.
 - **Scope:** exhaustive, explicit. `- edit: path` / `- create: path` / `- delete: path`. Scope is the single biggest lever on tool-call count and drift. Be ruthless.
@@ -50,7 +146,7 @@ Fetch `template://contract` as the skeleton. Sections:
 - **Acceptance:** concrete, verifiable checks. "All existing tests pass." "New tests cover case A, B, C." "No changes to files outside Scope."
 - **Non-goals:** cheap to write, high leverage — they prevent rabbit-holing. List what this contract explicitly does NOT do.
 
-Save at `<target-repo>/contracts/T-NNN-slug.md` (convention; not yet enforced). Pick `T-NNN` as the next unused task number.
+Save at `<target-repo>/contracts/T-NNN-slug.md` (convention; not enforced). Pick `T-NNN` as the next unused task number — `clanker list` shows what's taken.
 
 Common contract mistakes:
 - Scope too broad (`- edit: src/`) — the executor will wander. List specific files.
@@ -60,24 +156,27 @@ Common contract mistakes:
 ## Running a build
 
 1. Write the contract file.
-2. Call `build(contractPath)`. It blocks; go do something else.
-3. Read the returned proof-of-work JSON.
+2. `clanker validate <contract-path>` to confirm it parses and the scope files exist.
+3. `clanker build <contract-path>`. It blocks for minutes to tens of minutes; go do something else.
+4. Read the proof-of-work JSON that comes back on stdout.
+5. `clanker review <task-id>` for the bundled diff + summary.
 
 The worktree is on a branch `contract/T-NNN`. It is not automatically cleaned up — merge, cherry-pick, or `git worktree remove` yourself.
 
-**Target repo:** `build()` operates on the current working directory of the MCP server process (typically the repo Claude Code was started in). There's a `targetRepo` parameter for overriding this, but it's a dev/test convenience that will be removed before v2 ships — don't rely on it for day-to-day work. The intended flow is one Claude Code session per target repo.
+**Target repo:** clanker operates on the current working directory.
+The intended flow is one Claude Code session per target repo, so cwd is implicit. There's no override flag — `cd` if you need to.
 
 ## Reading proof-of-work
 
-Shape (see `template://proof-of-work` for full schema). Check in this order:
+Shape (see `clanker template proof-of-work` for full schema). Check in this order:
 
 1. **`terminal_state`**: `success` | `failure` | `rejected` | `blocked`.
    - `success` — executor completed AND an independent closeout reviewer verified every Acceptance bullet. `acceptance[]` carries closeout's verdicts with citations; `sub_agents_spawned[]` has a `{role: closeout, verdict: pass|mixed|fail}` entry.
-   - `failure` — executor gave up after tool-call budget or similar.
+   - `failure` — executor gave up after tool-call budget or similar. A `success`-then-demoted run (closeout caught something) also lands here.
    - `rejected` — contract is structurally wrong (missing section, scope file doesn't exist). See `rejection_reason`.
    - `blocked` — executor hit something it couldn't resolve. See `blocked_question`.
 
-2. **`scope_adherence.in_scope`**: false means files changed outside declared Scope. `out_of_scope_paths` lists them. Investigate — either the contract's Scope was incomplete, or the executor colored outside the lines.
+2. **`scope_adherence.in_scope`**: false means files changed outside declared Scope. `out_of_scope_paths` lists them. Investigate by re-reading Scope and the contract — either Scope was incomplete, or the executor colored outside the lines.
 
 3. **`files_changed`**: what actually moved. Cross-check against Scope.
 
@@ -87,11 +186,9 @@ Shape (see `template://proof-of-work` for full schema). Check in this order:
 
 6. **`estimated_cost_usd`**, **`tokens_input_total`**, **`tokens_output_total`**: rough signal on spend. Cost is a hand-rated placeholder — order-of-magnitude only.
 
-7. **`transcript_path`**: human-readable markdown of the run. Open this before `trace_path` (JSONL) — the transcript shows turn-by-turn model text, tool calls, and results in a scannable form.
+7. **`transcript_path`**, **`worktree_path`**, **`branch`**: pointers, not destinations to dig into. `clanker review <task-id>` already bundles what you need; `clanker log <task-id>` opens the transcript when you need turn-by-turn detail.
 
-8. **`worktree_path`**, **`branch`**: where the work lives. Navigate there to inspect the diff.
-
-**`acceptance[]` is empty in v1.** Closeout verification hasn't shipped yet. `terminal_state=success` is not the same as "acceptance passed" — you must verify by reading the diff.
+Trust closeout verdicts. Spot-check the diff via `clanker review` if `terminal_state=success` but something in `notes` or `scope_adherence` looks off — but don't reflexively re-read source files in the worktree just because you can.
 
 ## The retry loop
 
@@ -105,7 +202,7 @@ When `terminal_state=blocked`, `blocked_question.category` tells you what to do:
 
 When `terminal_state=rejected`: read `rejection_reason`. Fix the contract structurally — usually a missing section or a scope file that doesn't exist — and re-run.
 
-When `terminal_state=failure`: open `transcript_path`, read what happened, decide whether to re-run (maybe with tighter Scope) or abandon.
+When `terminal_state=failure`: `clanker log <task-id>` for the transcript, decide whether to re-run (maybe with tighter Scope) or abandon.
 
 Before re-running: `git worktree remove <worktree_path>` and `git branch -D contract/T-NNN`, or the next build on the same task id will fail "worktree path already exists."
 
@@ -113,32 +210,34 @@ Before re-running: `git worktree remove <worktree_path>` and `git branch -D cont
 
 Why delegate at all:
 - Executing in-context on Opus: roughly $1–5 per non-trivial task.
-- Delegating via `build()`: typically $0.03–0.30.
+- Delegating via `clanker build`: typically $0.03–0.30.
 - The other half of the value: while the cheap executor grinds, Opus is free to do something else.
 
 When in doubt: if a task is on the boundary between "delegate" and "do in-context," bias toward delegation when the task is clearly-scoped and toward in-context when it's exploratory or judgment-heavy.
 
-## Known v1 limitations
+## Known limitations
 
 Keep these in mind when interpreting results:
 
-- **Closeout reviewer is in.** `acceptance[]` is populated by an independent read-only reviewer after success runs. A `success` terminal means the reviewer passed every bullet; `failure` after closeout means the reviewer caught something — parent can second-guess by reading the trace and the closeout citations.
-- **Safety gates are in.** Danger-pattern (`rm -rf`, `sudo`, etc.), network-egress (`curl`/`wget`/`gh api` without localhost exemption), and doom-loop (3× same tool-args or 5 consecutive failures) detectors will block with the right `blocked_question.category`. Contracts that genuinely need network don't yet have a declaration mechanism — coming.
-- **Docker sandbox shipped, opt-in.** Set `Sandbox.Mode="Docker"` in clanker's `appsettings.json` and run `./sandbox/build.sh` to activate. In that mode each `bash` call runs in a throwaway container with `--network=none`, so a confused / compromised executor can't touch the host filesystem outside the worktree or reach the network. Default is still `Host` mode for backward compatibility.
+- **Closeout reviewer is in.** `acceptance[]` is populated by an independent read-only reviewer after success runs. A `success` terminal means the reviewer passed every bullet; `failure` after closeout means the reviewer caught something — second-guess by reading the trace and the closeout citations.
+- **Safety gates are in.** Danger-pattern (`rm -rf`, `sudo`, etc.), network-egress (`curl`/`wget`/`gh api` without localhost exemption), and doom-loop (3× same tool-args or 5 consecutive failures) detectors will block with the right `blocked_question.category`. Contracts that genuinely need network can declare an `Allowed network:` section.
+- **Docker sandbox shipped, opt-in.** Set `Sandbox.Mode="Docker"` in `appsettings.json` and run `./sandbox/build.sh` to activate. In that mode each `bash` call runs in a throwaway container with `--network=none`, so a confused / compromised executor can't touch the host filesystem outside the worktree or reach the network. Default is still `Host` mode for backward compatibility.
 - **Toolset:** `bash`, `read_file`, `write_file`, `apply_patch`, `grep`, `list_dir`, `todo_read`, `todo_write`. Prefer `apply_patch` for edits when running GPT-family.
 - **Manual cleanup.** Worktrees and branches are not auto-removed.
 - **`retry_count` is always 0.** In-loop retries not yet implemented.
-- **Handlers are real.** `list_tasks`, `get_contract`, `get_log`, `validate_contract`, `update_contract` all work; see the MCP surface table at the top.
 
 ## Quick reference
 
 | Step | Action |
 |---|---|
 | Decide to delegate | Scope listable? Acceptance writable in 3–6 bullets? Mechanical work? |
-| Draft contract | Fetch `template://contract`; fill all six sections |
-| Save | `<target-repo>/contracts/T-NNN-slug.md` |
-| Run | `build(contractPath)` |
+| Draft contract | `clanker template contract > contracts/T-NNN-slug.md`; fill all six sections |
+| Validate | `clanker validate contracts/T-NNN-slug.md` |
+| Run | `clanker build contracts/T-NNN-slug.md` |
 | Read result | `terminal_state` → `scope_adherence` → `files_changed` → `notes` |
-| Inspect work | Open `transcript_path`; navigate to `worktree_path` |
+| Inspect | `clanker review T-NNN` (bundled diff + proof) |
+| Deeper inspect | `clanker log T-NNN` (full transcript) |
 | Retry | Match `blocked_question.category` to the action above |
 | Clean up | `git worktree remove` + `git branch -D contract/T-NNN` when done |
+
+The cardinal rule: **`clanker review`, not Read into the worktree.**

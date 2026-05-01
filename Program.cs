@@ -1,104 +1,103 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using ModelContextProtocol.Server;
 
 namespace McpClanker;
 
+// CLI entry point. One process per invocation, scoped to cwd.
+//
+// Subcommands fall into three groups:
+//   build / validate / review     — the core delegation lifecycle
+//   list / show / log / template  — read-only inspection of contracts and artifacts
+//   ping / ping-tools / render-transcript — diagnostics
+//
+// Most subcommands delegate to static methods in McpTools. The `review`
+// subcommand and the diagnostic helpers are handled here.
+
 public class Program
 {
-    public static async Task Main(string[] args)
+    public static async Task<int> Main(string[] args)
     {
-        if (args.Length > 0 && args[0] == "--ping")
+        try
         {
-            await RunPing(args.Length > 1 ? args[1] : null);
-            return;
+            return await Dispatch(args);
         }
-
-        if (args.Length > 0 && args[0] == "--ping-tools")
+        catch (Exception ex)
         {
-            await RunPingTools(args.Length > 1 ? args[1] : null);
-            return;
+            Console.Error.WriteLine($"clanker: unhandled error: {ex.GetType().Name}: {ex.Message}");
+            ClankerLog.Error($"unhandled: {ex.GetType().Name}: {ex.Message}");
+            return 2;
         }
-
-        if (args.Length >= 2 && args[0] == "--build")
-        {
-            await RunBuild(args[1], args.Length > 2 ? args[2] : null);
-            return;
-        }
-
-        if (args.Length >= 2 && args[0] == "--render-transcript")
-        {
-            RunRenderTranscript(args[1]);
-            return;
-        }
-
-        var builder = Host.CreateApplicationBuilder(args);
-
-        // Host.CreateApplicationBuilder loads appsettings.json from the current
-        // working directory by default. Claude Code launches us with cwd set to
-        // whatever repo it's operating on, so also probe the executable's own
-        // directory as a fallback — that's where the build output copy lives.
-        builder.Configuration.AddJsonFile(
-            Path.Combine(AppContext.BaseDirectory, "appsettings.json"),
-            optional: true,
-            reloadOnChange: false);
-
-        // MCP stdio: logging goes to stderr so stdout stays clean for protocol frames.
-        builder.Logging.AddConsole(o =>
-        {
-            o.LogToStandardErrorThreshold = LogLevel.Trace;
-        });
-
-        builder.Services.AddSingleton<IChatClient>(sp =>
-            Providers.Create(sp.GetRequiredService<IConfiguration>()));
-
-        builder.Services
-            .AddMcpServer()
-            .WithStdioServerTransport()
-            .WithToolsFromAssembly()
-            .WithResources(CreateResources());
-
-        await builder.Build().RunAsync();
     }
 
-    static async Task RunPing(string? provider)
+    static async Task<int> Dispatch(string[] args)
     {
-        var builder = new ConfigurationBuilder()
-            .AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.json"), optional: true)
-            .AddJsonFile("appsettings.json", optional: true);
-
-        // Allow CLI override: dotnet run -- --ping AzureFoundry
-        if (!string.IsNullOrEmpty(provider))
+        if (args.Length == 0)
         {
-            builder.AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["ActiveProvider"] = provider,
-            });
+            PrintUsage();
+            return 1;
         }
 
-        var config = builder.Build();
-        Console.Error.WriteLine($"[ping] ActiveProvider = {config["ActiveProvider"]}");
-
-        var client = Providers.Create(config);
-        var response = await client.GetResponseAsync(
-            "Reply with exactly the word 'pong' and nothing else.",
-            new ChatOptions { MaxOutputTokens = 2000 });
-        Console.Error.WriteLine($"[ping] FinishReason = {response.FinishReason}");
-        Console.Error.WriteLine($"[ping] Usage = in:{response.Usage?.InputTokenCount} out:{response.Usage?.OutputTokenCount} total:{response.Usage?.TotalTokenCount}");
-        Console.Error.WriteLine($"[ping] Messages = {response.Messages.Count}, Contents across messages = {response.Messages.Sum(m => m.Contents.Count)}");
-        foreach (var msg in response.Messages)
-            foreach (var c in msg.Contents)
-                Console.Error.WriteLine($"[ping]   {msg.Role} content: {c.GetType().Name}");
-        Console.WriteLine(response.Text);
+        return args[0] switch
+        {
+            "build" => await RunBuild(args[1..]),
+            "validate" => await RunValidate(args[1..]),
+            "review" => RunReview(args[1..]),
+            "list" => RunList(),
+            "show" => RunShow(args[1..]),
+            "log" => RunLog(args[1..]),
+            "template" => RunTemplate(args[1..]),
+            "ping" => await RunPing(args[1..]),
+            "ping-tools" => await RunPingTools(args[1..]),
+            "render-transcript" => RunRenderTranscript(args[1..]),
+            "help" or "--help" or "-h" => PrintUsageAndExit(0),
+            _ => UnknownCommand(args[0]),
+        };
     }
 
-    // Exercises the full build() flow end-to-end from the CLI, bypassing MCP
-    // transport. Useful for iterating on Executor/Tools/Worktree without
-    // restarting the Claude Code MCP server subprocess.
-    static async Task RunBuild(string contractPath, string? providerOverride)
+    static int UnknownCommand(string cmd)
+    {
+        Console.Error.WriteLine($"clanker: unknown command '{cmd}'. Run `clanker help` for usage.");
+        return 1;
+    }
+
+    static int PrintUsageAndExit(int code)
+    {
+        PrintUsage();
+        return code;
+    }
+
+    static void PrintUsage()
+    {
+        Console.WriteLine("""
+Usage: clanker <command> [args]
+
+Lifecycle:
+  build <contract-path> [provider]   Run the executor against a contract.
+                                     Long-running (minutes to tens of minutes).
+                                     Emits proof-of-work JSON to stdout.
+  validate <contract-path>           Dry-run: parse + structural check, no model call.
+  review <task-id>                   Bundled post-build view: proof-of-work + git diff.
+                                     The canonical "what to do after a build" command.
+
+Inspection:
+  list                                List contracts under ./contracts/*.md (JSON).
+  show <task-id>                     Print the contract markdown for a task.
+  log <task-id>                      Print the rendered transcript of the most recent run.
+  template <name>                    Print a template (contract | proof-of-work).
+
+Diagnostics:
+  ping [provider]                    Smoke-test a chat provider.
+  ping-tools [provider]              Verify multi-turn tool-calling round-trips.
+  render-transcript <trace-jsonl>    Re-render transcript.md from an existing trace.jsonl.
+
+Operates on the current working directory. cwd must be a git repo for
+build / validate / list / show / log / review.
+""");
+    }
+
+    // --- shared config / chat construction ---
+
+    static IConfiguration BuildConfiguration(string? providerOverride = null)
     {
         var builder = new ConfigurationBuilder()
             .AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.json"), optional: true)
@@ -112,46 +111,142 @@ public class Program
             });
         }
 
-        var config = builder.Build();
-        Console.Error.WriteLine($"[build] ActiveProvider = {config["ActiveProvider"]}");
-        Console.Error.WriteLine($"[build] contractPath = {contractPath}");
-        Console.Error.WriteLine($"[build] cwd = {Directory.GetCurrentDirectory()}");
-
-        var chat = Providers.Create(config);
-        var json = await McpTools.Build(chat, config, contractPath);
-        Console.WriteLine(json);
+        return builder.Build();
     }
 
-    // Regenerates transcript.md from an existing trace.jsonl. Useful for old
-    // traces or for iterating on the renderer without re-running a contract.
-    static void RunRenderTranscript(string tracePath)
+    // --- core lifecycle subcommands ---
+
+    static async Task<int> RunBuild(string[] args)
     {
-        var outputPath = Path.Combine(
-            Path.GetDirectoryName(tracePath) ?? ".",
-            "transcript.md");
-        TranscriptRenderer.Render(tracePath, outputPath);
-        Console.Error.WriteLine($"[render-transcript] wrote {outputPath}");
+        if (args.Length < 1)
+        {
+            Console.Error.WriteLine("Usage: clanker build <contract-path> [provider]");
+            return 1;
+        }
+        var contractPath = args[0];
+        var providerOverride = args.Length > 1 ? args[1] : null;
+        var config = BuildConfiguration(providerOverride);
+        var chat = Providers.Create(config);
+
+        Console.Error.WriteLine($"[clanker] build start: contractPath={contractPath} provider={config["ActiveProvider"]} cwd={Directory.GetCurrentDirectory()}");
+        var json = await McpTools.Build(chat, config, contractPath);
+        Console.WriteLine(json);
+        return 0;
+    }
+
+    static async Task<int> RunValidate(string[] args)
+    {
+        if (args.Length < 1)
+        {
+            Console.Error.WriteLine("Usage: clanker validate <contract-path>");
+            return 1;
+        }
+        var json = await McpTools.ValidateContract(args[0]);
+        Console.WriteLine(json);
+        return 0;
+    }
+
+    static int RunReview(string[] args)
+    {
+        if (args.Length < 1)
+        {
+            Console.Error.WriteLine("Usage: clanker review <task-id>");
+            return 1;
+        }
+        var bundle = McpTools.Review(args[0]);
+        Console.Write(bundle);
+        if (!bundle.EndsWith('\n')) Console.WriteLine();
+        return 0;
+    }
+
+    // --- inspection subcommands ---
+
+    static int RunList()
+    {
+        Console.WriteLine(McpTools.ListTasks());
+        return 0;
+    }
+
+    static int RunShow(string[] args)
+    {
+        if (args.Length < 1)
+        {
+            Console.Error.WriteLine("Usage: clanker show <task-id>");
+            return 1;
+        }
+        Console.Write(McpTools.GetContract(args[0]));
+        return 0;
+    }
+
+    static int RunLog(string[] args)
+    {
+        if (args.Length < 1)
+        {
+            Console.Error.WriteLine("Usage: clanker log <task-id>");
+            return 1;
+        }
+        Console.Write(McpTools.GetLog(args[0]));
+        return 0;
+    }
+
+    static int RunTemplate(string[] args)
+    {
+        if (args.Length < 1)
+        {
+            Console.Error.WriteLine("Usage: clanker template <contract|proof-of-work>");
+            return 1;
+        }
+        var fileName = args[0] switch
+        {
+            "contract" => "contract.md",
+            "proof-of-work" => "proof-of-work.json",
+            _ => null,
+        };
+        if (fileName is null)
+        {
+            Console.Error.WriteLine($"clanker: unknown template '{args[0]}'. Available: contract, proof-of-work");
+            return 1;
+        }
+        var path = Path.Combine(AppContext.BaseDirectory, "Templates", fileName);
+        if (!File.Exists(path))
+        {
+            Console.Error.WriteLine($"clanker: template file not found at {path}");
+            return 2;
+        }
+        Console.Write(File.ReadAllText(path));
+        return 0;
+    }
+
+    // --- diagnostics ---
+
+    static async Task<int> RunPing(string[] args)
+    {
+        var providerOverride = args.Length > 0 ? args[0] : null;
+        var config = BuildConfiguration(providerOverride);
+        Console.Error.WriteLine($"[ping] ActiveProvider = {config["ActiveProvider"]}");
+
+        var client = Providers.Create(config);
+        var response = await client.GetResponseAsync(
+            "Reply with exactly the word 'pong' and nothing else.",
+            new ChatOptions { MaxOutputTokens = 2000 });
+        Console.Error.WriteLine($"[ping] FinishReason = {response.FinishReason}");
+        Console.Error.WriteLine($"[ping] Usage = in:{response.Usage?.InputTokenCount} out:{response.Usage?.OutputTokenCount} total:{response.Usage?.TotalTokenCount}");
+        Console.Error.WriteLine($"[ping] Messages = {response.Messages.Count}, Contents across messages = {response.Messages.Sum(m => m.Contents.Count)}");
+        foreach (var msg in response.Messages)
+            foreach (var c in msg.Contents)
+                Console.Error.WriteLine($"[ping]   {msg.Role} content: {c.GetType().Name}");
+        Console.WriteLine(response.Text);
+        return 0;
     }
 
     // Verifies multi-turn tool-calling round-trips correctly against the active
     // provider. Specifically checks that reasoning-model responses (TextReasoningContent)
     // don't break the follow-up turn after a tool call. If this works, the inner
     // executor loop is safe to build on the same pattern.
-    static async Task RunPingTools(string? provider)
+    static async Task<int> RunPingTools(string[] args)
     {
-        var builder = new ConfigurationBuilder()
-            .AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.json"), optional: true)
-            .AddJsonFile("appsettings.json", optional: true);
-
-        if (!string.IsNullOrEmpty(provider))
-        {
-            builder.AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["ActiveProvider"] = provider,
-            });
-        }
-
-        var config = builder.Build();
+        var providerOverride = args.Length > 0 ? args[0] : null;
+        var config = BuildConfiguration(providerOverride);
         Console.Error.WriteLine($"[ping-tools] ActiveProvider = {config["ActiveProvider"]}");
 
         var client = Providers.Create(config);
@@ -185,10 +280,9 @@ public class Program
         {
             Console.Error.WriteLine("[ping-tools] FAIL: no tool call on turn 1.");
             Console.WriteLine(r1.Text);
-            return;
+            return 1;
         }
 
-        // Echo assistant messages back into history for turn 2.
         foreach (var msg in r1.Messages)
             history.Add(msg);
 
@@ -208,6 +302,25 @@ public class Program
         DescribeResponse("r2", r2);
 
         Console.WriteLine(r2.Text);
+        return 0;
+    }
+
+    // Regenerates transcript.md from an existing trace.jsonl. Useful for old
+    // traces or for iterating on the renderer without re-running a contract.
+    static int RunRenderTranscript(string[] args)
+    {
+        if (args.Length < 1)
+        {
+            Console.Error.WriteLine("Usage: clanker render-transcript <trace-jsonl-path>");
+            return 1;
+        }
+        var tracePath = args[0];
+        var outputPath = Path.Combine(
+            Path.GetDirectoryName(tracePath) ?? ".",
+            "transcript.md");
+        TranscriptRenderer.Render(tracePath, outputPath);
+        Console.Error.WriteLine($"[render-transcript] wrote {outputPath}");
+        return 0;
     }
 
     static void DescribeResponse(string label, ChatResponse response)
@@ -218,30 +331,5 @@ public class Program
         foreach (var msg in response.Messages)
             foreach (var c in msg.Contents)
                 Console.Error.WriteLine($"[ping-tools]   {msg.Role} content: {c.GetType().Name}");
-    }
-
-    static IEnumerable<McpServerResource> CreateResources()
-    {
-        var templatesDir = Path.Combine(AppContext.BaseDirectory, "Templates");
-
-        yield return McpServerResource.Create(
-            () => File.ReadAllText(Path.Combine(templatesDir, "contract.md")),
-            new McpServerResourceCreateOptions
-            {
-                UriTemplate = "template://contract",
-                Name = "Contract template",
-                Description = "Markdown skeleton for a new T-NNN contract file.",
-                MimeType = "text/markdown",
-            });
-
-        yield return McpServerResource.Create(
-            () => File.ReadAllText(Path.Combine(templatesDir, "proof-of-work.json")),
-            new McpServerResourceCreateOptions
-            {
-                UriTemplate = "template://proof-of-work",
-                Name = "Proof-of-work template",
-                Description = "Example shape of the structured artifact returned by build().",
-                MimeType = "application/json",
-            });
     }
 }

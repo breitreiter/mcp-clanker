@@ -4,14 +4,22 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
-using ModelContextProtocol.Server;
 
 namespace McpClanker;
 
-[McpServerToolType]
+// Static surface methods invoked by the CLI dispatcher in Program.cs.
+// Originally MCP-tool entry points; the [Description] attributes are
+// retained as inline documentation and have no runtime effect now that
+// the MCP layer has been removed.
+//
+// All methods operate on the current working directory as the target
+// git repo. The previous `targetRepo` override parameter is gone — the
+// CLI's contract is one process per invocation, scoped to wherever the
+// user ran it from.
+
 public static class McpTools
 {
-    [McpServerTool, Description("Smoke test: asks the configured provider to reply with a short greeting. Use to verify provider wiring.")]
+    [Description("Smoke test: asks the configured provider to reply with a short greeting. Use to verify provider wiring.")]
     public static async Task<string> Ping(IChatClient chat, string? message = null)
     {
         var prompt = message ?? "Reply with exactly the word 'pong' and nothing else.";
@@ -19,15 +27,13 @@ public static class McpTools
         return response.Text;
     }
 
-    [McpServerTool, Description("Executes a contract file through a cheap, slow coding executor (default: Azure GPT-5.1-codex-mini) in a fresh git worktree, and returns a structured proof-of-work JSON. Long-running: minutes to tens of minutes. Use for rote, narrow-scoped tasks with explicit file Scope and 3-6 verifiable Acceptance bullets; don't use for exploration, cross-cutting refactors, or judgment-heavy work. Draft the contract from the `template://contract` resource. Runs with safety gates (danger-pattern / network-egress / doom-loop), a closeout reviewer that independently verifies acceptance on success (`terminal_state=failure` from a success-then-demoted run means the closeout caught something), and an optional Docker sandbox (opt-in via appsettings). **Do not delegate tasks that require adding a package the project hasn't already adopted** — the sandbox's cached-only-packages posture means new deps fail to restore. Package-adoption is a judgment call the caller owns. See the `clanker` skill for the full delegate/write/interpret/retry workflow.")]
+    [Description("Executes a contract file through a cheap, slow coding executor (default: Azure GPT-5.1-codex-mini) in a fresh git worktree, and returns a structured proof-of-work JSON. Long-running: minutes to tens of minutes. Persists the proof-of-work to <trace-dir>/proof-of-work.json so `clanker review` can read it later.")]
     public static async Task<string> Build(
         IChatClient chat,
         IConfiguration config,
-        string contractPath,
-        [Description("Dev/test convenience only — absolute path to the target git repository to operate on. Normally unset: the server uses its own current working directory. Scheduled for removal before v2/shipping — the production flow is one Claude Code session per target repo.")]
-        string? targetRepo = null)
+        string contractPath)
     {
-        ClankerLog.Info($"build: start contractPath={contractPath} targetRepoArg={targetRepo ?? "<null>"} cwd={Directory.GetCurrentDirectory()}");
+        ClankerLog.Info($"build: start contractPath={contractPath} cwd={Directory.GetCurrentDirectory()}");
 
         if (!File.Exists(contractPath))
             return BuildResultJson.Serialize(RejectBuild("T-???", null, null, $"Contract file not found: {contractPath}"));
@@ -36,7 +42,7 @@ public static class McpTools
         var contract = ContractParser.Parse(markdown);
         ClankerLog.Info($"build: parsed taskId={contract.TaskId} title={contract.Title}");
 
-        var (resolvedTargetRepo, targetRepoError) = ResolveTargetRepo(targetRepo);
+        var (resolvedTargetRepo, targetRepoError) = ResolveTargetRepo();
         if (resolvedTargetRepo is null)
             return BuildResultJson.Serialize(RejectBuild(contract.TaskId, null, null, targetRepoError!));
         ClankerLog.Info($"build: targetRepo resolved to {resolvedTargetRepo}");
@@ -82,7 +88,25 @@ public static class McpTools
             ct: CancellationToken.None);
         ClankerLog.Info($"build: executor completed taskId={contract.TaskId} terminal={result.TerminalState} toolCalls={result.ToolCallCount}");
 
-        return BuildResultJson.Serialize(result);
+        var json = BuildResultJson.Serialize(result);
+
+        // Persist proof-of-work next to transcript.md so `clanker review`
+        // can read structured fields without re-executing or scraping
+        // trace.jsonl. Best-effort — if the trace dir vanished we still
+        // return the JSON to the caller.
+        try
+        {
+            Directory.CreateDirectory(traceDirectory);
+            var proofPath = Path.Combine(traceDirectory, "proof-of-work.json");
+            await File.WriteAllTextAsync(proofPath, json);
+            ClankerLog.Info($"build: proof-of-work persisted at {proofPath}");
+        }
+        catch (Exception ex)
+        {
+            ClankerLog.Warn($"build: failed to persist proof-of-work.json: {ex.GetType().Name}: {ex.Message}");
+        }
+
+        return json;
     }
 
     // Default if the active provider doesn't pin a value. Matches the prior
@@ -102,30 +126,28 @@ public static class McpTools
         return int.TryParse(raw, out var n) && n > 0 ? n : null;
     }
 
-    // Normalizes and validates an optional caller-supplied targetRepo. Guards
-    // against relative paths, non-existent directories, and non-git-repo
-    // targets. The parameter itself is a dev/test convenience — see the
-    // [Description] on Build's targetRepo parameter for the removal plan.
-    static (string? Resolved, string? Error) ResolveTargetRepo(string? provided)
+    // Resolves and validates the current working directory as a git repo.
+    // The CLI is one-process-per-invocation, so cwd is the contract.
+    static (string? Resolved, string? Error) ResolveTargetRepo()
     {
         string candidate;
         try
         {
-            candidate = Path.GetFullPath(provided ?? Directory.GetCurrentDirectory());
+            candidate = Path.GetFullPath(Directory.GetCurrentDirectory());
         }
         catch (Exception ex)
         {
-            return (null, $"Could not resolve targetRepo path: {ex.Message}");
+            return (null, $"Could not resolve cwd: {ex.Message}");
         }
 
         if (!Directory.Exists(candidate))
-            return (null, $"targetRepo directory does not exist: {candidate}");
+            return (null, $"cwd does not exist: {candidate}");
 
         // A git repo root has a `.git/` directory; a worktree has a `.git` file
         // pointing at the real gitdir. Accept both.
         var dotGit = Path.Combine(candidate, ".git");
         if (!Directory.Exists(dotGit) && !File.Exists(dotGit))
-            return (null, $"targetRepo is not a git repository (no .git entry): {candidate}");
+            return (null, $"cwd is not a git repository (no .git entry): {candidate}");
 
         return (candidate, null);
     }
@@ -158,12 +180,10 @@ public static class McpTools
             TranscriptPath: "");
     }
 
-    [McpServerTool, Description("List all contracts under `<target-repo>/contracts/*.md` with their task IDs and titles. Returns a JSON array of { task_id, title, file_path }. Use to inventory what's been written; call get_log(taskId) to see whether each has been run.")]
-    public static string ListTasks(
-        [Description("Dev/test convenience only — see build()'s targetRepo parameter.")]
-        string? targetRepo = null)
+    [Description("List all contracts under `<cwd>/contracts/*.md` with their task IDs and titles. Returns a JSON array of { task_id, title, file_path }.")]
+    public static string ListTasks()
     {
-        var (resolved, error) = ResolveTargetRepo(targetRepo);
+        var (resolved, error) = ResolveTargetRepo();
         if (resolved is null)
             return SerializeError(error!);
 
@@ -183,13 +203,10 @@ public static class McpTools
         return JsonSerializer.Serialize(tasks, TaskJsonOptions);
     }
 
-    [McpServerTool, Description("Return the raw markdown content of a contract identified by task ID (looks up `<target-repo>/contracts/T-<id>-*.md`). Use when a parent needs to re-read or revise the contract body.")]
-    public static string GetContract(
-        string taskId,
-        [Description("Dev/test convenience only — see build()'s targetRepo parameter.")]
-        string? targetRepo = null)
+    [Description("Return the raw markdown content of a contract identified by task ID (looks up `<cwd>/contracts/T-<id>-*.md`).")]
+    public static string GetContract(string taskId)
     {
-        var (resolved, error) = ResolveTargetRepo(targetRepo);
+        var (resolved, error) = ResolveTargetRepo();
         if (resolved is null)
             return SerializeError(error!);
 
@@ -200,13 +217,10 @@ public static class McpTools
         return File.ReadAllText(path);
     }
 
-    [McpServerTool, Description("Return the rendered markdown transcript of a contract's most recent run, if any. Reads `<parent>/<repo>.worktrees/<taskId>.trace/transcript.md`. Use when the proof-of-work notes aren't enough to diagnose what happened. For raw JSONL, read the sibling trace.jsonl directly.")]
-    public static string GetLog(
-        string taskId,
-        [Description("Dev/test convenience only — see build()'s targetRepo parameter.")]
-        string? targetRepo = null)
+    [Description("Return the rendered markdown transcript of a contract's most recent run, if any. Reads `<parent>/<repo>.worktrees/<taskId>.trace/transcript.md`.")]
+    public static string GetLog(string taskId)
     {
-        var (resolved, error) = ResolveTargetRepo(targetRepo);
+        var (resolved, error) = ResolveTargetRepo();
         if (resolved is null)
             return SerializeError(error!);
 
@@ -218,11 +232,8 @@ public static class McpTools
         return File.ReadAllText(transcriptPath);
     }
 
-    [McpServerTool, Description("Dry-run a contract: parse it and check structural validity + scope-file existence, without executing. Returns JSON { is_valid, rejection_reason, task_id, title, goal, scope, acceptance, non_goals }. Use before build() to catch contract errors without paying for a model turn.")]
-    public static async Task<string> ValidateContract(
-        string contractPath,
-        [Description("Dev/test convenience only — see build()'s targetRepo parameter.")]
-        string? targetRepo = null)
+    [Description("Dry-run a contract: parse it and check structural validity + scope-file existence, without executing.")]
+    public static async Task<string> ValidateContract(string contractPath)
     {
         if (!File.Exists(contractPath))
             return SerializeError($"Contract file not found: {contractPath}");
@@ -230,7 +241,7 @@ public static class McpTools
         var markdown = await File.ReadAllTextAsync(contractPath);
         var contract = ContractParser.Parse(markdown);
 
-        var (resolved, targetRepoError) = ResolveTargetRepo(targetRepo);
+        var (resolved, targetRepoError) = ResolveTargetRepo();
         if (resolved is null)
             return SerializeError(targetRepoError!);
 
@@ -249,23 +260,108 @@ public static class McpTools
         return JsonSerializer.Serialize(result, TaskJsonOptions);
     }
 
-    [McpServerTool, Description("Write or overwrite a contract markdown file at the given path. Parent directories are NOT auto-created — caller is responsible for the target location (convention: `<target-repo>/contracts/T-NNN-slug.md`).")]
-    public static async Task<string> UpdateContract(string contractPath, string content)
+    [Description("Bundled post-build view: proof-of-work summary + git diff of contract/<task-id> against HEAD. Keeps the parent out of the worktree.")]
+    public static string Review(string taskId)
     {
-        var parent = Path.GetDirectoryName(contractPath);
-        if (!string.IsNullOrEmpty(parent) && !Directory.Exists(parent))
-            return SerializeError($"Parent directory does not exist: {parent}");
+        var (resolved, error) = ResolveTargetRepo();
+        if (resolved is null)
+            return $"# Review: {taskId}\n\n**Error:** {error}\n";
 
-        var existedBefore = File.Exists(contractPath);
-        await File.WriteAllTextAsync(contractPath, content);
-        var bytes = new FileInfo(contractPath).Length;
-        return JsonSerializer.Serialize(new UpdateResult(
-            Path: contractPath,
-            Action: existedBefore ? "overwrote" : "created",
-            Bytes: bytes), TaskJsonOptions);
+        var traceDir = Worktree.TraceDir(resolved, taskId);
+        var proofPath = Path.Combine(traceDir, "proof-of-work.json");
+        var transcriptPath = Path.Combine(traceDir, "transcript.md");
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"# Review: {taskId}");
+        sb.AppendLine();
+
+        if (!File.Exists(proofPath))
+        {
+            sb.AppendLine($"**No proof-of-work found at `{proofPath}`.** The build may not have completed, or the trace directory was cleaned up.");
+            sb.AppendLine();
+        }
+        else
+        {
+            sb.AppendLine("## Proof of work");
+            sb.AppendLine();
+            sb.AppendLine("```json");
+            sb.AppendLine(File.ReadAllText(proofPath).TrimEnd());
+            sb.AppendLine("```");
+            sb.AppendLine();
+        }
+
+        var branch = $"contract/{NormalizeTaskId(taskId)}";
+        sb.AppendLine($"## Diff: `git diff HEAD...{branch}`");
+        sb.AppendLine();
+        var (diffOk, diffOutput) = RunGitCapture(resolved, "diff", $"HEAD...{branch}");
+        if (!diffOk)
+        {
+            sb.AppendLine($"**git diff failed:** {diffOutput.Trim()}");
+        }
+        else if (string.IsNullOrWhiteSpace(diffOutput))
+        {
+            sb.AppendLine("*(no changes)*");
+        }
+        else
+        {
+            sb.AppendLine("```diff");
+            sb.AppendLine(diffOutput.TrimEnd());
+            sb.AppendLine("```");
+        }
+        sb.AppendLine();
+
+        if (File.Exists(transcriptPath))
+        {
+            sb.AppendLine($"For full executor turn-by-turn detail: `clanker log {taskId}` (or open `{transcriptPath}`).");
+        }
+
+        return sb.ToString();
     }
 
-    // --- helpers for the un-stubbed handlers ---
+    static string NormalizeTaskId(string taskId)
+        => taskId.StartsWith("T-", StringComparison.OrdinalIgnoreCase) ? taskId : $"T-{taskId}";
+
+    // Lightweight git invocation that returns (success, combined-output).
+    // Distinct from Worktree.RunGit, which throws — review must not throw on
+    // a missing branch; it should explain the failure to the caller.
+    static (bool Ok, string Output) RunGitCapture(string cwd, params string[] args)
+    {
+        try
+        {
+            using var proc = new System.Diagnostics.Process
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "git",
+                    WorkingDirectory = cwd,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                },
+            };
+            foreach (var a in args) proc.StartInfo.ArgumentList.Add(a);
+            proc.Start();
+            var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+            var stderrTask = proc.StandardError.ReadToEndAsync();
+            if (!proc.WaitForExit(30_000))
+            {
+                try { proc.Kill(entireProcessTree: true); } catch { }
+                return (false, "git timed out after 30s");
+            }
+            var stdout = stdoutTask.GetAwaiter().GetResult();
+            var stderr = stderrTask.GetAwaiter().GetResult();
+            if (proc.ExitCode != 0)
+                return (false, string.IsNullOrWhiteSpace(stderr) ? $"exit {proc.ExitCode}" : stderr);
+            return (true, stdout);
+        }
+        catch (Exception ex)
+        {
+            return (false, $"{ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    // --- helpers ---
 
     static readonly JsonSerializerOptions TaskJsonOptions = new()
     {
@@ -285,7 +381,7 @@ public static class McpTools
         var contractsDir = Path.Combine(targetRepo, "contracts");
         if (!Directory.Exists(contractsDir)) return null;
 
-        var normalized = taskId.StartsWith("T-", StringComparison.OrdinalIgnoreCase) ? taskId : $"T-{taskId}";
+        var normalized = NormalizeTaskId(taskId);
 
         // Exact-id prefix: T-001.md or T-001-anything.md
         foreach (var path in Directory.EnumerateFiles(contractsDir, $"{normalized}*.md"))
@@ -316,9 +412,4 @@ public static class McpTools
     record ScopeSummary(
         [property: JsonPropertyName("action")] string Action,
         [property: JsonPropertyName("path")] string Path);
-
-    record UpdateResult(
-        [property: JsonPropertyName("path")] string Path,
-        [property: JsonPropertyName("action")] string Action,
-        [property: JsonPropertyName("bytes")] long Bytes);
 }
