@@ -88,6 +88,27 @@ public static class McpTools
             ct: CancellationToken.None);
         ImpLog.Info($"build: executor completed taskId={contract.TaskId} terminal={result.TerminalState} toolCalls={result.ToolCallCount}");
 
+        // Auto-commit on evaluator sign-off. Closeout already demoted to
+        // Failure if any verdict failed (Executor.RunCloseoutAsync), so
+        // Success here means the evaluator approved the diff. Failures
+        // bubble into imp.log but don't tank the proof-of-work — the parent
+        // can still inspect/commit manually if needed.
+        if (result.TerminalState == TerminalState.Success && !string.IsNullOrEmpty(result.WorktreePath))
+        {
+            try
+            {
+                var message = $"{result.TaskId}: {contract.Title}";
+                var committed = Worktree.CommitAll(result.WorktreePath, message);
+                ImpLog.Info(committed
+                    ? $"build: auto-committed taskId={result.TaskId}"
+                    : $"build: auto-commit skipped (worktree clean) taskId={result.TaskId}");
+            }
+            catch (Exception ex)
+            {
+                ImpLog.Warn($"build: auto-commit failed taskId={result.TaskId}: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
         var json = BuildResultJson.Serialize(result);
 
         // Persist proof-of-work next to transcript.md so `imp review`

@@ -46,6 +46,24 @@ public static class Worktree
         return (worktreePath, branch);
     }
 
+    // Stages and commits everything in the worktree. Returns true if a commit
+    // was created, false if the tree was already clean (executor somehow
+    // committed despite the CommandClassifier block, or genuinely no-op
+    // changes). Throws on git failure — caller decides whether to swallow.
+    public static bool CommitAll(string worktreePath, string message)
+    {
+        var porcelain = RunGitCapture(worktreePath, "status", "--porcelain");
+        if (string.IsNullOrWhiteSpace(porcelain))
+        {
+            ImpLog.Info($"git: worktree clean, skipping auto-commit cwd={worktreePath}");
+            return false;
+        }
+
+        RunGit(worktreePath, "add", "-A");
+        RunGit(worktreePath, "commit", "-m", message);
+        return true;
+    }
+
     // Hard ceiling on any git invocation. `git worktree add` is normally
     // sub-second; minutes means something on the OS side is wedged
     // (antivirus, credential helper waiting on a hidden window, stale
@@ -98,5 +116,52 @@ public static class Worktree
         }
 
         ImpLog.Info($"git: completed `git {argDisplay}` exit=0");
+    }
+
+    // Same shape as RunGit but returns stdout. Kept separate so existing
+    // fire-and-forget callers stay terse.
+    static string RunGitCapture(string cwd, params string[] args)
+    {
+        var argDisplay = string.Join(' ', args);
+        ImpLog.Info($"git: invoking `git {argDisplay}` cwd={cwd}");
+
+        using var proc = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "git",
+                WorkingDirectory = cwd,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            },
+        };
+        foreach (var a in args) proc.StartInfo.ArgumentList.Add(a);
+        proc.Start();
+
+        var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+        var stderrTask = proc.StandardError.ReadToEndAsync();
+
+        if (!proc.WaitForExit(GitTimeoutMs))
+        {
+            try { proc.Kill(entireProcessTree: true); } catch { }
+            ImpLog.Error($"git: TIMEOUT after {GitTimeoutMs}ms `git {argDisplay}` cwd={cwd}");
+            throw new InvalidOperationException(
+                $"git {argDisplay} timed out after {GitTimeoutMs / 1000}s and was killed");
+        }
+
+        var stdout = stdoutTask.GetAwaiter().GetResult();
+        var stderr = stderrTask.GetAwaiter().GetResult();
+
+        if (proc.ExitCode != 0)
+        {
+            ImpLog.Error($"git: failed exit={proc.ExitCode} `git {argDisplay}` stderr={stderr.Trim()}");
+            throw new InvalidOperationException(
+                $"git {argDisplay} failed (exit {proc.ExitCode}): {stderr.Trim()}");
+        }
+
+        ImpLog.Info($"git: completed `git {argDisplay}` exit=0");
+        return stdout;
     }
 }

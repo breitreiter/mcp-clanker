@@ -36,6 +36,12 @@ public static class CommandClassifier
         @">\s*/usr/",
         @">\s*/bin/",
         @">\s*/sbin/",
+        // Commits are imp's job, not the executor's. Blocking `git add` and
+        // `git commit` here keeps the auto-commit on evaluator sign-off
+        // (McpTools.Build) authoritative — no double-commits, no
+        // half-staged trees the executor created and forgot about.
+        @"\bgit\s+add\b",
+        @"\bgit\s+commit\b",
     };
 
     static readonly Regex[] DangerRegexes = DefaultDangerPatterns
