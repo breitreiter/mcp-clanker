@@ -137,21 +137,28 @@ Heuristic: if you can't write crisp Acceptance bullets in under a minute, the co
 
 ## Writing a contract
 
-Run `imp template contract` for the skeleton. Sections:
+A contract is a legible expression of intent — read by an LLM, not a strict parser. Don't sweat formatting. Headers vs bold, ordered vs unordered lists, prose vs bullets — the executor doesn't care. Run `imp template contract` for a starting shape if you want one, but treat it as scaffolding, not a form to fill out.
 
-- **Goal:** one sentence — what changes in the world when this is done.
-- **Scope:** exhaustive, explicit. `- edit: path` / `- create: path` / `- delete: path`. Scope is the single biggest lever on tool-call count and drift. Be ruthless.
-- **Contract:** signatures, behaviors, constraints the implementation must honor. "What" not "how."
-- **Context:** existing files the executor should read, with one-line "why it matters." Cheap orientation beats the executor re-deriving the codebase shape.
-- **Acceptance:** concrete, verifiable checks. "All existing tests pass." "New tests cover case A, B, C." "No changes to files outside Scope."
-- **Non-goals:** cheap to write, high leverage — they prevent rabbit-holing. List what this contract explicitly does NOT do.
+Trust the executor. It can write straightforward code from a clear description — you don't need to spell out pseudo-code, walk through obvious algorithms, or pre-chew anything a competent coder would derive in a minute. Tell it *what* and the relevant constraints; let it pick *how*. Save the detail for the parts that are genuinely surprising, non-obvious, or would otherwise have it guessing.
+
+The bits that earn their keep:
+
+- **Goal** — one sentence. What changes in the world when this is done.
+- **Scope** — list the files you expect to touch. The `create:` / `edit:` / `delete:` prefix is the convention `imp validate` uses to pre-check existence, so it's worth keeping. Scope is the biggest lever on tool-call count and drift — be ruthless.
+- **Contract** — signatures, behaviors, constraints. "What," not "how."
+- **Context** — files the executor should read, with one-line "why it matters." Cheap orientation beats the executor re-deriving the codebase shape.
+- **Acceptance** — concrete, verifiable checks. "All existing tests pass." "New tests cover case A, B, C." "No changes to files outside Scope."
+- **Non-goals** — cheap to write, high leverage. They prevent rabbit-holing.
+
+Validation enforces the minimum: a Goal sentence, at least one Scope entry that points at a real path, at least one Acceptance bullet. Beyond that, the shape is for the reader's benefit, not the parser's.
 
 Save at `<target-repo>/contracts/T-NNN-slug.md` (convention; not enforced). Pick `T-NNN` as the next unused task number — `imp list` shows what's taken.
 
-Common contract mistakes:
+Common contract mistakes (all about content, not formatting):
 - Scope too broad (`- edit: src/`) — the executor will wander. List specific files.
 - Missing Non-goals — the executor decides for itself what's adjacent enough to touch.
 - Acceptance written as aspirations ("code is clean") rather than checks ("no lines over 120 chars in edited files").
+- Over-specifying *how* — pseudo-code, step-by-step algorithm walkthroughs, or paraphrasing the standard library. Trust the executor to write the obvious code; spend your words on the non-obvious.
 
 ## Running a build
 
