@@ -40,6 +40,7 @@ public class Program
         return args[0] switch
         {
             "build" => await RunBuild(args[1..]),
+            "research" => await RunResearch(args[1..]),
             "validate" => await RunValidate(args[1..]),
             "review" => RunReview(args[1..]),
             "list" => RunList(),
@@ -75,6 +76,10 @@ Lifecycle:
   build <contract-path> [provider]   Run the executor against a contract.
                                      Long-running (minutes to tens of minutes).
                                      Emits proof-of-work JSON to stdout.
+  research --mode=<m> "question"     Cheap-executor research run. --mode=fs reads the
+    [--brief path]                   current checkout; --brief points at a structured
+    [provider]                       brief markdown file. Emits report JSON to stdout
+                                     and a sidecar archive to <repo>.researches/.
   validate <contract-path>           Dry-run: parse + structural check, no model call.
   review <task-id>                   Bundled post-build view: proof-of-work + git diff.
                                      The canonical "what to do after a build" command.
@@ -130,6 +135,60 @@ build / validate / list / show / log / review.
 
         Console.Error.WriteLine($"[imp] build start: contractPath={contractPath} provider={config["ActiveProvider"]} cwd={Directory.GetCurrentDirectory()}");
         var json = await McpTools.Build(chat, config, contractPath);
+        Console.WriteLine(json);
+        return 0;
+    }
+
+    static async Task<int> RunResearch(string[] args)
+    {
+        // Accepted forms:
+        //   imp research --mode=fs "question"
+        //   imp research --mode=fs --brief contracts/R-007.md
+        //   imp research --mode=fs --brief contracts/R-007.md gpt-mini
+        // Trailing positional arg, if not consumed by --brief, is the question
+        // (free-text). A trailing arg AFTER all flags is treated as a provider
+        // override only if --brief was used and it doesn't look like a path
+        // — keep it simple: provider override always comes via env / config
+        // for v1, not as a positional.
+        string? mode = null;
+        string? briefPath = null;
+        string? question = null;
+
+        for (int i = 0; i < args.Length; i++)
+        {
+            var a = args[i];
+            if (a.StartsWith("--mode=", StringComparison.Ordinal))
+                mode = a["--mode=".Length..];
+            else if (a == "--mode" && i + 1 < args.Length)
+                mode = args[++i];
+            else if (a.StartsWith("--brief=", StringComparison.Ordinal))
+                briefPath = a["--brief=".Length..];
+            else if (a == "--brief" && i + 1 < args.Length)
+                briefPath = args[++i];
+            else if (question is null)
+                question = a;
+            else
+                question += " " + a;
+        }
+
+        if (string.IsNullOrEmpty(mode))
+        {
+            Console.Error.WriteLine("Usage: imp research --mode=<name> \"question\" [--brief path]");
+            Console.Error.WriteLine($"       known modes: {string.Join(", ", Modes.KnownNames())}");
+            return 1;
+        }
+        if (string.IsNullOrEmpty(briefPath) && string.IsNullOrEmpty(question))
+        {
+            Console.Error.WriteLine("Usage: imp research --mode=<name> \"question\" [--brief path]");
+            Console.Error.WriteLine("       supply either a free-text question or --brief <path>");
+            return 1;
+        }
+
+        var config = BuildConfiguration();
+        var chat = Providers.Create(config);
+
+        Console.Error.WriteLine($"[imp] research start: mode={mode} brief={briefPath ?? "<free-text>"} provider={config["ActiveProvider"]} cwd={Directory.GetCurrentDirectory()}");
+        var json = await Research.RunAsync(chat, config, mode, question, briefPath);
         Console.WriteLine(json);
         return 0;
     }

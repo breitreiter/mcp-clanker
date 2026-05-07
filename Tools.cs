@@ -468,7 +468,7 @@ public static class Tools
         ".venv", "venv", ".idea", "dist", "build", ".next", ".nuget",
     };
 
-    static string ListDir(string? path, string cwd)
+    internal static string ListDir(string? path, string cwd)
     {
         var resolved = ResolveInsideCwd(path ?? "", cwd);
         if (resolved is null)
@@ -505,7 +505,7 @@ public static class Tools
 
     // --- read_file ---
 
-    static string ReadFile(string path, int? offset, int? limit, string cwd)
+    internal static string ReadFile(string path, int? offset, int? limit, string cwd)
     {
         var resolved = ResolveInsideCwd(path, cwd);
         if (resolved is null)

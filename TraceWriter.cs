@@ -137,6 +137,9 @@ public sealed class TraceWriter : IDisposable
         // they carry the self-check / closeout verdicts. Logging the hash
         // only loses the content we most want to debug.
         "finish_work" => true,
+        // `finish_research` carries the entire research report; same
+        // reasoning — the args ARE what we want to debug.
+        "finish_research" => true,
         _ => false,
     };
 
