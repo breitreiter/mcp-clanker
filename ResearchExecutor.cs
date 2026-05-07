@@ -47,7 +47,7 @@ public static class ResearchExecutor
         resolvedTools.Add(mode.FinishToolFactory(state));
 
         var systemPrompt = LoadModeSystemPrompt(mode);
-        var userPrompt = BuildUserPrompt(descriptor);
+        var userPrompt = BuildUserPrompt(descriptor, toolBudget);
 
         var history = new List<ChatMessage>
         {
@@ -275,12 +275,14 @@ public static class ResearchExecutor
         return File.ReadAllText(path);
     }
 
-    static string BuildUserPrompt(TaskDescriptor d)
+    static string BuildUserPrompt(TaskDescriptor d, int toolBudget)
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("# Research brief");
         sb.AppendLine();
         sb.Append("**Question:** ").AppendLine(d.Question);
+        sb.AppendLine();
+        sb.Append("**Tool-call budget:** ").Append(toolBudget).AppendLine(" total (read_file / grep / list_dir / finish_research combined). Apply the convergence cadence from the system prompt: by ~50% you should have a working answer, by ~75% you should be writing the report. Pre-commit beats timing out.");
         if (d.SubQuestions.Count > 0)
         {
             sb.AppendLine();
