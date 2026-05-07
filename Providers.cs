@@ -1,3 +1,4 @@
+using System.ClientModel;
 using Anthropic.SDK;
 using Azure;
 using Azure.AI.OpenAI;
@@ -30,6 +31,7 @@ public static class Providers
             "openai" => CreateOpenAI(section),
             "anthropic" => CreateAnthropic(section),
             "gemini" => CreateGemini(section),
+            "qwen" => CreateQwen(section),
             _ => throw new InvalidOperationException($"Unknown provider: {active}"),
         };
     }
@@ -88,6 +90,39 @@ public static class Providers
         var apiKey = Required(cfg, "ApiKey");
         var model = cfg["Model"] ?? "gemini-2.0-flash-exp";
         return new GeminiChatClient(apiKey, model);
+    }
+
+    // Qwen (and any other Qwen3-Coder-class model served over an
+    // OpenAI-compatible endpoint). Tested shapes:
+    //   - DashScope cloud: https://dashscope.aliyuncs.com/compatible-mode/v1
+    //     (intl variant: https://dashscope-intl.aliyuncs.com/compatible-mode/v1)
+    //   - Ollama local: http://localhost:11434/v1 with any non-empty ApiKey
+    //   - vLLM / sglang: the deployment's /v1 base, with whatever key the
+    //     server enforces (often blank/dummy).
+    // The model field is the served name — `qwen3-coder-plus` on DashScope,
+    // `qwen3-coder:30b` on a typical Ollama install, etc.
+    static IChatClient CreateQwen(IConfiguration cfg)
+    {
+        var endpoint = Required(cfg, "Endpoint");
+        var apiKey = Required(cfg, "ApiKey");
+        var model = Required(cfg, "Model");
+
+        // Local inference (Vulkan / ROCm / CPU) is much slower than the
+        // hosted SDK's default 100s per-request timeout assumes — a single
+        // turn with reasoning + tool calls can exceed 5 minutes on
+        // consumer-AMD setups. Configurable via NetworkTimeoutSeconds;
+        // default 600s (10 min) is generous for any sane local-server pace.
+        var timeoutSeconds = int.TryParse(cfg["NetworkTimeoutSeconds"], out var t) && t > 0 ? t : 600;
+
+        var options = new OpenAI.OpenAIClientOptions
+        {
+            Endpoint = new Uri(endpoint),
+            NetworkTimeout = TimeSpan.FromSeconds(timeoutSeconds),
+        };
+        return new OpenAI.Chat.ChatClient(
+            model: model,
+            credential: new ApiKeyCredential(apiKey),
+            options: options).AsIChatClient();
     }
 
     static string Required(IConfiguration cfg, string key) =>
