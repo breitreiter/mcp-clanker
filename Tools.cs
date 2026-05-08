@@ -262,7 +262,7 @@ public static class Tools
         if (string.IsNullOrWhiteSpace(command))
             return "ERROR: empty command.";
 
-        var danger = CommandClassifier.Classify(command);
+        var danger = CommandClassifier.Classify(command, sandbox.Mode);
         if (danger.IsDangerous)
         {
             state.FlagSafetyBreach(new SafetyBreach(
@@ -272,11 +272,11 @@ public static class Tools
             return $"ERROR: command blocked by safety gate: {danger.Reason}. This run will terminate.";
         }
 
-        // Soft egress gate stands aside when the contract has declared
-        // `**Allowed network:**`. The Docker `--network=none` wall (when
-        // the sandbox is in Docker mode) is the structural backstop — this
-        // gate is just to catch commands a contract author didn't anticipate.
-        if (state.AllowedNetwork.Count == 0)
+        // Soft egress gate is Host-mode-only. Under Docker, `--network=none`
+        // is the structural wall — the regex check is redundant and the
+        // **Allowed network:** annotation in contracts becomes documentary
+        // intent rather than a runtime knob.
+        if (sandbox.Mode == SandboxMode.Host && state.AllowedNetwork.Count == 0)
         {
             var egress = NetworkEgressChecker.Check(command);
             if (egress.IsBlocked)
