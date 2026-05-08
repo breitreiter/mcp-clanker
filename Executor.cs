@@ -275,6 +275,35 @@ public static class Executor
                     var demotionNote = $"Closeout verdict: {failed} of {total} acceptance items failed independent verification. See acceptance[] and sub_agents_spawned[] for details.";
                     notes = string.IsNullOrEmpty(notes) ? demotionNote : $"{notes}\n\n{demotionNote}";
                 }
+
+                // Two further demotion triggers for verdict honesty:
+                //   - Any Unknown acceptance verdict means "I can't tell" — not Success.
+                //   - Any file touched outside declared Scope means the model widened the
+                //     contract on its own — not Success.
+                // Same ordering invariant as the Fail demotion above: must fire before the
+                // finally block's trace.WriteEnd so trace / transcript / POW agree.
+                var authoritativeReports = state.CloseoutReports
+                    ?? state.AcceptanceReports
+                    ?? new List<AcceptanceReport>();
+                var unknownItems = authoritativeReports
+                    .Where(r => ParseAcceptanceStatus(r.Status) == AcceptanceStatus.Unknown)
+                    .Select(r => r.Item)
+                    .ToList();
+                if (unknownItems.Count > 0)
+                {
+                    terminal = TerminalState.Failure;
+                    var unknownNote = $"Verdict downgrade: {unknownItems.Count} of {authoritativeReports.Count} acceptance items unverified (Unknown): {string.Join("; ", unknownItems)}";
+                    notes = string.IsNullOrEmpty(notes) ? unknownNote : $"{notes}\n\n{unknownNote}";
+                }
+
+                var touchedFiles = state.FilesTouched.Select(kv => new FileChange(kv.Key, kv.Value)).ToList();
+                var scopeCheck = CheckScopeAdherence(contract, touchedFiles);
+                if (!scopeCheck.InScope)
+                {
+                    terminal = TerminalState.Failure;
+                    var scopeNote = $"Verdict downgrade: scope drift — touched [{string.Join(", ", scopeCheck.OutOfScopePaths)}] outside declared Scope.";
+                    notes = string.IsNullOrEmpty(notes) ? scopeNote : $"{notes}\n\n{scopeNote}";
+                }
             }
         }
         finally
