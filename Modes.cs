@@ -47,6 +47,7 @@ public static class Modes
         {
             if (_initialized) return;
             Register(BuildFsMode());
+            Register(BuildWikiMode());
             _initialized = true;
         }
     }
@@ -82,5 +83,21 @@ public static class Modes
         AllowedReach: new HashSet<ToolReach> { ToolReach.None, ToolReach.LocalFsRead },
         ToolNames: new[] { "read_file", "grep", "list_dir" },
         SystemPromptFileName: "research-fs.md",
+        FinishToolFactory: ResearchTools.BuildFinishResearchTool);
+
+    // Survey-tuned variant of fs. Same toolset, sandbox, and finish tool —
+    // the only axis of difference is the system prompt, which frames the run
+    // as "describe this directory for a wiki page" instead of "answer a
+    // question." Consumed by `imp wiki` (the orchestrator dispatches one run
+    // per directory in scope).
+    static ModeDefinition BuildWikiMode() => new(
+        Name: "wiki",
+        Sandbox: new SandboxProfile(
+            AllowNetwork: false,
+            RepoMount: MountPolicy.ReadOnly,
+            AllowSubprocess: false),
+        AllowedReach: new HashSet<ToolReach> { ToolReach.None, ToolReach.LocalFsRead },
+        ToolNames: new[] { "read_file", "grep", "list_dir" },
+        SystemPromptFileName: "research-fs-wiki.md",
         FinishToolFactory: ResearchTools.BuildFinishResearchTool);
 }

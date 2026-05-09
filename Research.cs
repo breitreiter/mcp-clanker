@@ -29,6 +29,9 @@ public record ResearchResult(
 
 public static class Research
 {
+    // CLI entry: free-text question or --brief markdown. Resolves the cwd
+    // as a repo, parses the descriptor, and delegates to the in-memory
+    // overload below.
     public static async Task<string> RunAsync(
         IChatClient chat,
         IConfiguration config,
@@ -42,16 +45,6 @@ public static class Research
         if (repoRoot is null)
             return SerializeError(modeName, "repo-resolve", repoError!);
 
-        ModeDefinition mode;
-        try
-        {
-            mode = Modes.Get(modeName);
-        }
-        catch (Exception ex)
-        {
-            return SerializeError(modeName, "mode-resolve", ex.Message);
-        }
-
         TaskDescriptor descriptor;
         try
         {
@@ -64,6 +57,34 @@ public static class Research
             return SerializeError(modeName, "brief-parse", ex.Message);
         }
 
+        return await RunAsync(chat, config, modeName, descriptor, repoRoot);
+    }
+
+    // In-memory entry: caller has already constructed a descriptor and
+    // resolved repoRoot. Used by `imp wiki`, which dispatches one research
+    // run per in-scope directory and doesn't want to round-trip through
+    // markdown brief files. toolBudgetOverride lets the wiki orchestrator
+    // pass `Wiki:ToolBudget` (tighter, scope-bounded) instead of the
+    // ad-hoc `Research:ToolBudget`; null falls back to the Research budget
+    // so existing CLI behaviour is unchanged.
+    public static async Task<string> RunAsync(
+        IChatClient chat,
+        IConfiguration config,
+        string modeName,
+        TaskDescriptor descriptor,
+        string repoRoot,
+        int? toolBudgetOverride = null)
+    {
+        ModeDefinition mode;
+        try
+        {
+            mode = Modes.Get(modeName);
+        }
+        catch (Exception ex)
+        {
+            return SerializeError(modeName, "mode-resolve", ex.Message);
+        }
+
         var archiveDir = ResearchArchive.DirectoryFor(repoRoot, descriptor);
         Directory.CreateDirectory(archiveDir);
         ResearchArchive.WriteBrief(archiveDir, descriptor);
@@ -73,7 +94,9 @@ public static class Research
         var modelName = providerSection?["Model"];
         var maxOutputTokens = ParseInt(providerSection, "MaxOutputTokens") ?? ResearchExecutor.DefaultMaxOutputTokens;
         var sandbox = SandboxConfig.FromConfiguration(config);
-        var toolBudget = ParseInt(config.GetSection("Research"), "ToolBudget") ?? ResearchExecutor.DefaultToolBudget;
+        var toolBudget = toolBudgetOverride
+            ?? ParseInt(config.GetSection("Research"), "ToolBudget")
+            ?? ResearchExecutor.DefaultToolBudget;
 
         ImpLog.Info($"research: executor starting researchId={descriptor.ResearchId} mode={mode.Name} provider={providerName} model={modelName}");
 
