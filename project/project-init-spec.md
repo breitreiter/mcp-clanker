@@ -114,7 +114,7 @@ Per-kind extensions:
 | `rule` | `enforces` (optional list of file globs the rule applies to) |
 | `aspiration` | (none) |
 | `learning` | `relevance_horizon` (optional date past which to fade), `topics` (list) |
-| `plan` | `state: active \| shelved \| historical \| abandoned`, `supersedes` (list of plan filenames) |
+| `plan` | `state: exploring \| active \| shipped \| shelved \| abandoned`, `supersedes` (list of plan filenames), `companion_dir` (optional bool — true when `<slug>/` companion dir exists alongside) |
 | `task` | `topic` (optional), `parent_plan` (optional) |
 | `reference` | `subject` (what external thing this references) |
 

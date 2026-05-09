@@ -224,16 +224,38 @@ Lifecycle: aging. Old learnings fade in surfaced views but don't go
 false.
 
 ### `plan`
-Designs in various states. The `state:` frontmatter field tracks
-which:
+The **primary working document** for any coherent piece of work in
+this repo — features, refactors, investigations, audits. Most new
+work starts here, in `state: exploring`. Research, options analysis,
+decisions, and prototyping notes accumulate inside the plan doc as
+the work firms up. Other kinds (rules, aspirations, learnings) are
+mostly *distilled out* of plans as content settles, not authored
+independently.
 
-- `active` — being worked on
-- `shelved` — researched but not picked up
-- `historical` — shipped, kept for "yeah but why"
-- `abandoned` — tried, didn't work, kept for the lesson
+A plan is normally a single file at `plans/<status-dir>/<slug>.md`.
+When the planning work outgrows one file (extensive research, html/js
+prototypes, scratch material, multiple sub-docs), an optional
+companion directory at `plans/<status-dir>/<slug>/` may appear
+alongside it. The `.md` stays canonical (it carries the frontmatter
+and the plan narrative); the companion dir holds whatever the work
+needs — no enforced structure, "random crap" is the explicit answer.
+Both move together when the plan changes state.
 
-Lifecycle: state-tracked. Active plans transition to archive as work
-concludes.
+States (`state:` frontmatter field):
+
+| State | Directory | Meaning |
+|---|---|---|
+| `exploring` | `plans/active/` | pre-decision; research and shaping |
+| `active` | `plans/active/` | committed; in progress |
+| `shipped` | `plans/archive/` | done; lives in codebase now |
+| `shelved` | `plans/archive/` | paused; might pick up later |
+| `abandoned` | `plans/archive/` | tried or evaluated; kept for the lesson |
+
+Lifecycle: most plans walk `exploring → active → shipped`. Some get
+shelved or abandoned along the way. When a plan ships, distilled
+artifacts may be extracted to `rules/`, `learnings/`, etc. (with
+provenance pointing back to the plan); the plan doc itself stays in
+`archive/` as the canonical record of the work.
 
 ### `task`
 Tracking items: TODOs, fix-its, in-flight work that doesn't warrant
@@ -271,7 +293,7 @@ Per-kind extensions:
 | `rule` | `enforces` (optional list of file globs the rule applies to) |
 | `aspiration` | (none) |
 | `learning` | `relevance_horizon` (optional date past which to fade), `topics` (list) |
-| `plan` | `state: active \| shelved \| historical \| abandoned`, `supersedes` (list of plan filenames) |
+| `plan` | `state: exploring \| active \| shipped \| shelved \| abandoned`, `supersedes` (list of plan filenames), `companion_dir` (optional bool — set when `<slug>/` dir exists alongside) |
 | `task` | `topic` (optional), `parent_plan` (optional) |
 | `reference` | `subject` (what external thing this references) |
 
@@ -525,11 +547,32 @@ See `../_meta/conventions.md` for full conventions.
 ````markdown
 # Active plans
 
-Plans currently being worked on. These are the things that, if you
-asked "what's in flight right now?", you'd point to.
+The **primary working area** for in-flight work. Most new work in this
+repo starts here — features, refactors, investigations, audits all
+land as a plan in `state: exploring` and accumulate content as the
+work progresses.
 
-Frontmatter `state: active`. When work concludes, plans transition to
-`../archive/` (state becomes `historical` or `abandoned`).
+States in this directory:
+
+- `state: exploring` — pre-decision. Research, options analysis,
+  prior-art surveys, "should we even do this?" thinking. Often the
+  longest-lived state.
+- `state: active` — we've committed. Plan is firming up; work is
+  underway.
+
+When a plan concludes, it moves to `../archive/` with state
+`shipped`, `shelved`, or `abandoned`.
+
+## File-or-directory
+
+A plan is **always** a single file: `<slug>.md`. The frontmatter and
+plan narrative live there.
+
+A plan **may also** have a companion directory `<slug>/` next to it
+when the planning work outgrows one file — html/js prototypes,
+scratch experiments, raw research dumps, screen mocks, anything. The
+companion dir is free-form by design. No required structure. The
+`.md` and `<slug>/` move together when state transitions.
 
 ## Example shape
 
@@ -537,28 +580,36 @@ Frontmatter `state: active`. When work concludes, plans transition to
 ---
 kind: plan
 title: <plan title>
-state: active
+state: exploring
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 provenance:
   source: human
+companion_dir: false   # set true if you've created <slug>/ alongside
 ---
 
 # <Plan title>
 
-## Goal
-<What we're trying to achieve.>
+## Why we're looking at this
+<seed of the idea>
 
-## Approach
-<How.>
+## Prior art / research
+<accumulates as you investigate>
+
+## Options
+<as the shape firms up>
+
+## Decision
+<once made; before this it's still exploration>
 
 ## Phases / milestones
-- [ ] <step>
 - [ ] <step>
 
 ## Open questions
 - <question>
 ```
+
+Sections are suggestive — add and remove as the work demands.
 
 See `../../_meta/conventions.md` for full conventions.
 ````
@@ -568,22 +619,29 @@ See `../../_meta/conventions.md` for full conventions.
 ````markdown
 # Archived plans
 
-Plans that have concluded — either shipped (`state: historical`),
-abandoned (`state: abandoned`), or shelved (`state: shelved`,
-researched but not picked up).
+Plans that have concluded. Three states live here:
 
-Archive entries are useful for "yeah but why?" but are not
-authoritative on current behavior. The wiki / lint should not flag
-drift between archived plans and current code as alarming.
+- `state: shipped` — done; lives in the codebase now. The plan doc is
+  the canonical "yeah but why" record of how we got there.
+- `state: shelved` — paused; might pick up later.
+- `state: abandoned` — tried or evaluated; not pursuing. Kept for
+  the lesson.
 
-When a plan moves here, consider also producing a learning entry
-that captures the lesson — the plan archive preserves the doc; the
-learning extracts what we'd carry forward.
+Archive entries are useful for history but are not authoritative on
+current behavior. Lint / drift checks should not flag disagreement
+between archived plans and current code as alarming.
+
+When a plan moves here (especially `shipped` or `abandoned`),
+consider whether a learning entry should be extracted — the plan
+archive preserves the work; the learning captures what we'd carry
+forward.
+
+If the plan had a companion directory (`<slug>/`), it moves with the
+`.md` — both end up here together.
 
 ## Frontmatter
 
-Same as active plans, but with `state: historical | abandoned |
-shelved`.
+Same as active plans, but with `state: shipped | shelved | abandoned`.
 
 See `../../_meta/conventions.md` for full conventions.
 ````

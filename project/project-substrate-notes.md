@@ -171,7 +171,7 @@ five kinds of content, often co-mingled within a single file:
 | **Rules / constraints** (design system, file formats, function shape) | The doc | **Alarm.** Code that violates is a bug to investigate. Internal contradictions = trouble. | Slow, hand-curated. Changes are expensive. | Surface in concept pages; lint code against. |
 | **Aspirations / intent** (what we're going for, design tensions) | The doc | **Expected.** Code falls short by definition. Internal contradictions are *normal* ("deep but intuitive"). | Long-lived; revised as understanding evolves. | Hold the aspiration↔reality gap explicitly on concept pages. |
 | **Learnings** (playtest feedback, sim results, articles) | The world (external evidence) | **Awareness, not alarm.** Snake-in-the-yard: not a rule, not a fact about now, but a possibility you carry forward. Decays in *relevance*, not in truth. | Aging. Old learnings fade but don't go false. | Index. Surface contextually. Possibly half-life or relevance score. |
-| **Plans** (designs, research, partial work) | The doc | Depends on plan state. | Mixed: historical, shelved, active, abandoned-but-kept. | Index by state. Don't lint historical/shelved against code. |
+| **Plans** *(primary working document)* — features, refactors, investigations, audits | The doc | Depends on state. | Mixed: exploring, active, shipped, shelved, abandoned. | Index by state. Don't lint shipped/shelved/abandoned against code. See H10 — plans are where most new work originates and accumulates. |
 | **Task progress** (TODO items, partial checklists) | The doc + the code | Implicit drift = "it's not done yet." | Volatile. Items get promoted to plans; plans get demoted to background. | Roll up. Flag promotion candidates (a TODO that's grown teeth). |
 
 Two kinds spec-kit's taxonomy doesn't have: **aspirations** and
@@ -329,6 +329,55 @@ moment in time; learnings describe possibilities, not contracts.
 Roll up `W-NNN` manifests into an append-only `wiki/log.md` so
 "what did the wiki notice changed since last run" is a single grep.
 Cheap given existing manifests.
+
+### H10. Plans are the primary working document
+
+Most new work in the substrate originates and accumulates as a plan,
+not as a rule/aspiration/learning authored in isolation. The
+sequence:
+
+1. Idea → create `plans/active/<slug>.md` with `state: exploring`
+2. Research, options analysis, prior-art, sketches accumulate inside
+   the plan doc as work progresses
+3. Optional: when the work outgrows one file (extensive prototypes,
+   raw research dumps, html/js mocks), a companion directory
+   `plans/active/<slug>/` appears alongside. Free-form contents —
+   "random crap is fine" by design.
+4. As the plan firms up, `state: exploring → active`. As phases ship,
+   the plan tracks progress.
+5. When concluded: `state: shipped | shelved | abandoned`, file (and
+   companion dir if present) move to `plans/archive/`.
+6. Rules, aspirations, learnings *distill out* of the plan as
+   content settles — but the plan doc remains canonical for the
+   work itself.
+
+Implications:
+
+- **One file is canonical, the dir is overflow.** Tools traversing
+  the substrate look for `<slug>.md` first; an adjacent `<slug>/`
+  is supplementary. Frontmatter lives on the `.md` only.
+- **Cross-cutting non-feature stuff still goes direct to the
+  taxonomy.** A standalone decision ("UTC for all timestamps")
+  lands in `rules/` directly. A standalone observation
+  ("Cosmos has this latency") lands in `learnings/`. The "most new
+  work starts as a plan" rule applies to coherent in-flight work,
+  not isolated facts.
+- **The state enum is 5 values, collapsed**:
+
+| State | Directory | Meaning |
+|---|---|---|
+| `exploring` | `plans/active/` | pre-decision; research and shaping |
+| `active` | `plans/active/` | committed; in progress |
+| `shipped` | `plans/archive/` | done; lives in codebase |
+| `shelved` | `plans/archive/` | paused; might pick up later |
+| `abandoned` | `plans/archive/` | tried or evaluated; kept for the lesson |
+
+This collapsed (no separate `features/` namespace) after seeing
+nb's actual `Features/` dir — single-file flat pattern, mature
+mix of in-flight and shipped, ~16 files spanning user-facing
+features ("MCP_OAuth", "Skills") and internal work ("Testing",
+"Dependency_Upgrade", "Console_Output_Audit"). Empirically the
+distinction between "feature" and "plan" wasn't load-bearing.
 
 ### H8. Trust model and write privileges
 
@@ -770,6 +819,17 @@ and require explicit classification?
   (`project/` or configurable); staging in sidecar
   (`<repo>.project-staging/`), matching imp's existing
   `<repo>.worktrees/` / `<repo>.researches/` pattern. See Q13.
+- **2026-05-09. Plans are the primary working document; no separate
+  `features/` namespace.** Most new work starts as a plan in
+  `state: exploring` and accumulates content as it firms up. Other
+  kinds (rules/aspirations/learnings) are mostly distilled outputs.
+  A plan is always a `.md`; an optional companion dir
+  `plans/<status-dir>/<slug>/` holds overflow material — html/js
+  prototypes, scratch experiments, raw research — free-form and by
+  design "random crap is fine." State enum collapsed to 5:
+  exploring / active / shipped / shelved / abandoned. Decision after
+  reviewing nb's empirical Features/ pattern (single-file flat,
+  ~16 files spanning user-facing and internal work). See H10.
 - **2026-05-09. Trust model: Claude writes substrate; imp proposes
   only.** Foreground Claude can edit substrate directly. imp is
   read-only against substrate, gets a private work area, and emits
