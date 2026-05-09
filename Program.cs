@@ -41,7 +41,7 @@ public class Program
         {
             "build" => await RunBuild(args[1..]),
             "research" => await RunResearch(args[1..]),
-            "wiki" => RunWiki(args[1..]),
+            "wiki" => await RunWiki(args[1..]),
             "validate" => await RunValidate(args[1..]),
             "review" => RunReview(args[1..]),
             "list" => RunList(),
@@ -198,18 +198,24 @@ build / validate / list / show / log / review.
         return 0;
     }
 
-    static int RunWiki(string[] args)
+    static async Task<int> RunWiki(string[] args)
     {
-        // Accepted forms (v0):
-        //   imp wiki                  — plan whole repo, run orchestrator (step 4 — not yet)
-        //   imp wiki src/Foo          — plan subtree only
-        //   imp wiki --dry-run        — plan only, print as JSON
-        //   imp wiki src/Foo --dry-run
+        // Accepted forms:
+        //   imp wiki                  — plan whole repo, dispatch
+        //   imp wiki src/Foo          — plan subtree, dispatch
+        //   imp wiki --dry-run [path] — plan only, print as JSON
+        //   imp wiki --resume W-NNN   — resume an interrupted run from its manifest
         string? targetPath = null;
         bool dryRun = false;
-        foreach (var a in args)
+        string? resumeId = null;
+        for (int i = 0; i < args.Length; i++)
         {
+            var a = args[i];
             if (a == "--dry-run") dryRun = true;
+            else if (a.StartsWith("--resume=", StringComparison.Ordinal))
+                resumeId = a["--resume=".Length..];
+            else if (a == "--resume" && i + 1 < args.Length)
+                resumeId = args[++i];
             else if (a.StartsWith("--", StringComparison.Ordinal))
             {
                 Console.Error.WriteLine($"imp wiki: unknown flag '{a}'");
@@ -232,8 +238,39 @@ build / validate / list / show / log / review.
         }
 
         var config = BuildConfiguration();
+
+        // Resume path: load manifest from <repo>.wikis/W-NNN-<slug>/, ignore
+        // any positional path argument, dispatch unfinished targets.
+        if (!string.IsNullOrEmpty(resumeId))
+        {
+            if (!string.IsNullOrEmpty(targetPath) || dryRun)
+            {
+                Console.Error.WriteLine("imp wiki: --resume cannot be combined with a target path or --dry-run");
+                return 1;
+            }
+            var existing = WikiArchive.FindByWikiId(repoRoot, resumeId);
+            if (existing is null)
+            {
+                Console.Error.WriteLine($"imp wiki: no archive found for {resumeId} under {WikiArchive.RootFor(repoRoot)}");
+                return 1;
+            }
+            var manifest = WikiArchive.ReadManifest(existing);
+            if (manifest is null)
+            {
+                Console.Error.WriteLine($"imp wiki: manifest.json missing or unreadable in {existing}");
+                return 1;
+            }
+
+            var chat = Providers.Create(config);
+            Console.Error.WriteLine($"[imp] wiki resume: wikiId={manifest.WikiId} archive={existing} targets={manifest.Targets.Count}");
+            var json = await Wiki.RunAsync(chat, config, manifest, existing);
+            Console.WriteLine(json);
+            return 0;
+        }
+
         var wikiDir = config["Wiki:Dir"] ?? "wiki";
         var maxDirBytes = long.TryParse(config["Wiki:MaxDirBytes"], out var mdb) && mdb > 0 ? mdb : 40960L;
+        var toolBudget = int.TryParse(config["Wiki:ToolBudget"], out var tb) && tb > 0 ? tb : Wiki.DefaultToolBudget;
 
         string targetSubpath = "";
         if (!string.IsNullOrEmpty(targetPath))
@@ -257,9 +294,20 @@ build / validate / list / show / log / review.
             return 0;
         }
 
-        Console.Error.WriteLine("imp wiki: orchestrator not yet implemented (step 4); rerun with --dry-run for the plan");
-        return 2;
+        // Construct manifest from plan, allocate archive dir, dispatch.
+        var slug = SlugForRun(targetSubpath);
+        var freshManifest = Wiki.ManifestFromPlan(plan, targetSubpath, toolBudget, slug);
+        var archiveDir = WikiArchive.DirectoryFor(repoRoot, freshManifest.WikiId, slug);
+
+        var chatClient = Providers.Create(config);
+        Console.Error.WriteLine($"[imp] wiki start: wikiId={freshManifest.WikiId} archive={archiveDir} targets={freshManifest.Targets.Count} provider={config["ActiveProvider"]}");
+        var resultJson = await Wiki.RunAsync(chatClient, config, freshManifest, archiveDir);
+        Console.WriteLine(resultJson);
+        return 0;
     }
+
+    static string SlugForRun(string targetSubpath)
+        => string.IsNullOrEmpty(targetSubpath) ? "root" : BriefParser.SlugFrom(targetSubpath);
 
     static async Task<int> RunValidate(string[] args)
     {

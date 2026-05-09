@@ -92,6 +92,31 @@ public static class WikiPlanner
 
     public static string SerializePlan(WikiPlan plan) => JsonSerializer.Serialize(plan, JsonOpts);
 
+    // Direct allowlisted-extension files in a target directory, in
+    // ls-tree order. Used by the orchestrator to populate SuggestedSources
+    // on a per-target brief. Repo-relative paths.
+    public static IReadOnlyList<string> EnumerateSourceFiles(string repoRoot, string relativePath)
+    {
+        relativePath = NormalizeRelative(relativePath);
+        var (ok, raw) = RunGitLsTree(repoRoot, relativePath);
+        if (!ok) return Array.Empty<string>();
+
+        var files = new List<string>();
+        foreach (var line in raw.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var tab = line.IndexOf('\t');
+            if (tab < 0) continue;
+            var meta = line[..tab];
+            var name = line[(tab + 1)..];
+            var parts = meta.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 3 || parts[1] != "blob") continue;
+            var ext = Path.GetExtension(name);
+            if (!SourceExtensions.Contains(ext)) continue;
+            files.Add(relativePath.Length == 0 ? name : $"{relativePath}/{name}");
+        }
+        return files;
+    }
+
     // Map a source-tree relative path to its wiki page path. Repo root maps to
     // <wikiDir>/README.md (which doubles as the index). Any other dir maps to
     // <wikiDir>/<relative>.md — so src/Foo/ → wiki/src/Foo.md.
