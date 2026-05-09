@@ -41,6 +41,7 @@ public class Program
         {
             "build" => await RunBuild(args[1..]),
             "research" => await RunResearch(args[1..]),
+            "wiki" => RunWiki(args[1..]),
             "validate" => await RunValidate(args[1..]),
             "review" => RunReview(args[1..]),
             "list" => RunList(),
@@ -80,6 +81,10 @@ Lifecycle:
     [--brief path]                   current checkout; --brief points at a structured
     [provider]                       brief markdown file. Emits report JSON to stdout
                                      and a sidecar archive to <repo>.researches/.
+  wiki [path] [--dry-run]            Plan a per-directory wiki survey of the repo (or
+                                     a subtree). --dry-run emits the SKIP/STUB/RUN plan
+                                     and exits; without it, the orchestrator runs (not
+                                     yet implemented).
   validate <contract-path>           Dry-run: parse + structural check, no model call.
   review <task-id>                   Bundled post-build view: proof-of-work + git diff.
                                      The canonical "what to do after a build" command.
@@ -191,6 +196,69 @@ build / validate / list / show / log / review.
         var json = await Research.RunAsync(chat, config, mode, question, briefPath);
         Console.WriteLine(json);
         return 0;
+    }
+
+    static int RunWiki(string[] args)
+    {
+        // Accepted forms (v0):
+        //   imp wiki                  — plan whole repo, run orchestrator (step 4 — not yet)
+        //   imp wiki src/Foo          — plan subtree only
+        //   imp wiki --dry-run        — plan only, print as JSON
+        //   imp wiki src/Foo --dry-run
+        string? targetPath = null;
+        bool dryRun = false;
+        foreach (var a in args)
+        {
+            if (a == "--dry-run") dryRun = true;
+            else if (a.StartsWith("--", StringComparison.Ordinal))
+            {
+                Console.Error.WriteLine($"imp wiki: unknown flag '{a}'");
+                return 1;
+            }
+            else if (targetPath is null) targetPath = a;
+            else
+            {
+                Console.Error.WriteLine($"imp wiki: unexpected extra argument '{a}'");
+                return 1;
+            }
+        }
+
+        var cwd = Directory.GetCurrentDirectory();
+        var repoRoot = Path.GetFullPath(cwd);
+        if (!Directory.Exists(Path.Combine(repoRoot, ".git")) && !File.Exists(Path.Combine(repoRoot, ".git")))
+        {
+            Console.Error.WriteLine($"imp wiki: cwd is not a git repository: {repoRoot}");
+            return 1;
+        }
+
+        var config = BuildConfiguration();
+        var wikiDir = config["Wiki:Dir"] ?? "wiki";
+        var maxDirBytes = long.TryParse(config["Wiki:MaxDirBytes"], out var mdb) && mdb > 0 ? mdb : 40960L;
+
+        string targetSubpath = "";
+        if (!string.IsNullOrEmpty(targetPath))
+        {
+            var abs = Path.GetFullPath(targetPath);
+            if (!abs.Equals(repoRoot, StringComparison.Ordinal)
+                && !abs.StartsWith(repoRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            {
+                Console.Error.WriteLine($"imp wiki: target {abs} is outside repo {repoRoot}");
+                return 1;
+            }
+            targetSubpath = Path.GetRelativePath(repoRoot, abs).Replace('\\', '/');
+            if (targetSubpath == ".") targetSubpath = "";
+        }
+
+        var plan = WikiPlanner.Plan(repoRoot, targetSubpath, wikiDir, maxDirBytes);
+
+        if (dryRun)
+        {
+            Console.WriteLine(WikiPlanner.SerializePlan(plan));
+            return 0;
+        }
+
+        Console.Error.WriteLine("imp wiki: orchestrator not yet implemented (step 4); rerun with --dry-run for the plan");
+        return 2;
     }
 
     static async Task<int> RunValidate(string[] args)
