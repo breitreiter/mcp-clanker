@@ -1,6 +1,11 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 
+using Imp.Build;
+using Imp.Research;
+using Imp.Wiki;
+using Imp.Infrastructure;
+
 namespace Imp;
 
 // CLI entry point. One process per invocation, scoped to cwd.
@@ -10,7 +15,7 @@ namespace Imp;
 //   list / show / log / template  — read-only inspection of contracts and artifacts
 //   ping / ping-tools / render-transcript — diagnostics
 //
-// Most subcommands delegate to static methods in McpTools. The `review`
+// Most subcommands delegate to static methods in LifecycleCommands. The `review`
 // subcommand and the diagnostic helpers are handled here.
 
 public class Program
@@ -143,7 +148,7 @@ build / validate / list / show / log / review.
         var chat = Providers.Create(config);
 
         Console.Error.WriteLine($"[imp] build start: contractPath={contractPath} provider={config["ActiveProvider"]} cwd={Directory.GetCurrentDirectory()}");
-        var json = await McpTools.Build(chat, config, contractPath);
+        var json = await LifecycleCommands.Build(chat, config, contractPath);
         Console.WriteLine(json);
         return 0;
     }
@@ -197,7 +202,7 @@ build / validate / list / show / log / review.
         var chat = Providers.Create(config);
 
         Console.Error.WriteLine($"[imp] research start: mode={mode} brief={briefPath ?? "<free-text>"} provider={config["ActiveProvider"]} cwd={Directory.GetCurrentDirectory()}");
-        var json = await Research.RunAsync(chat, config, mode, question, briefPath);
+        var json = await ResearchRunner.RunAsync(chat, config, mode, question, briefPath);
         Console.WriteLine(json);
         return 0;
     }
@@ -269,14 +274,14 @@ build / validate / list / show / log / review.
 
             var chat = Providers.Create(config);
             Console.Error.WriteLine($"[imp] wiki resume: wikiId={manifest.WikiId} archive={existing} targets={manifest.Targets.Count}");
-            var json = await Wiki.RunAsync(chat, config, manifest, existing);
+            var json = await WikiRunner.RunAsync(chat, config, manifest, existing);
             Console.WriteLine(json);
             return 0;
         }
 
-        var wikiDir = config["Wiki:Dir"] ?? "wiki";
+        var wikiDir = config["Wiki:Dir"] ?? "imp-wiki";
         var maxDirBytes = long.TryParse(config["Wiki:MaxDirBytes"], out var mdb) && mdb > 0 ? mdb : 40960L;
-        var toolBudget = int.TryParse(config["Wiki:ToolBudget"], out var tb) && tb > 0 ? tb : Wiki.DefaultToolBudget;
+        var toolBudget = int.TryParse(config["Wiki:ToolBudget"], out var tb) && tb > 0 ? tb : WikiRunner.DefaultToolBudget;
 
         string targetSubpath = "";
         if (!string.IsNullOrEmpty(targetPath))
@@ -317,12 +322,12 @@ build / validate / list / show / log / review.
 
         // Construct manifest from plan, allocate archive dir, dispatch.
         var slug = SlugForRun(targetSubpath);
-        var freshManifest = Wiki.ManifestFromPlan(plan, targetSubpath, toolBudget, slug);
+        var freshManifest = WikiRunner.ManifestFromPlan(plan, targetSubpath, toolBudget, slug);
         var archiveDir = WikiArchive.DirectoryFor(repoRoot, freshManifest.WikiId, slug);
 
         var chatClient = Providers.Create(config);
         Console.Error.WriteLine($"[imp] wiki start: wikiId={freshManifest.WikiId} archive={archiveDir} targets={freshManifest.Targets.Count} provider={config["ActiveProvider"]}");
-        var resultJson = await Wiki.RunAsync(chatClient, config, freshManifest, archiveDir);
+        var resultJson = await WikiRunner.RunAsync(chatClient, config, freshManifest, archiveDir);
         Console.WriteLine(resultJson);
         return 0;
     }
@@ -368,7 +373,7 @@ build / validate / list / show / log / review.
             return 1;
         }
 
-        var pagePath = WikiPlanner.PageRelativePathFor(sourcePath, "wiki");
+        var pagePath = WikiPlanner.PageRelativePathFor(sourcePath, "imp-wiki");
         var ctx = new WikiPageContext(
             PagePath: pagePath,
             SourcePath: sourcePath,
@@ -449,7 +454,7 @@ build / validate / list / show / log / review.
     static int RunWikiIndexTest(string[] args)
     {
         var cwd = Path.GetFullPath(Directory.GetCurrentDirectory());
-        var wikiAbs = args.Length > 0 ? Path.GetFullPath(args[0]) : Path.Combine(cwd, "wiki");
+        var wikiAbs = args.Length > 0 ? Path.GetFullPath(args[0]) : Path.Combine(cwd, "imp-wiki");
         if (!Directory.Exists(wikiAbs))
         {
             Console.Error.WriteLine($"wiki-index-test: directory does not exist: {wikiAbs}");
@@ -470,7 +475,7 @@ build / validate / list / show / log / review.
             Console.Error.WriteLine("Usage: imp validate <contract-path>");
             return 1;
         }
-        var json = await McpTools.ValidateContract(args[0]);
+        var json = await LifecycleCommands.ValidateContract(args[0]);
         Console.WriteLine(json);
         return 0;
     }
@@ -482,7 +487,7 @@ build / validate / list / show / log / review.
             Console.Error.WriteLine("Usage: imp review <task-id>");
             return 1;
         }
-        var bundle = McpTools.Review(args[0]);
+        var bundle = LifecycleCommands.Review(args[0]);
         Console.Write(bundle);
         if (!bundle.EndsWith('\n')) Console.WriteLine();
         return 0;
@@ -492,7 +497,7 @@ build / validate / list / show / log / review.
 
     static int RunList()
     {
-        Console.WriteLine(McpTools.ListTasks());
+        Console.WriteLine(LifecycleCommands.ListTasks());
         return 0;
     }
 
@@ -503,7 +508,7 @@ build / validate / list / show / log / review.
             Console.Error.WriteLine("Usage: imp show <task-id>");
             return 1;
         }
-        Console.Write(McpTools.GetContract(args[0]));
+        Console.Write(LifecycleCommands.GetContract(args[0]));
         return 0;
     }
 
@@ -514,7 +519,7 @@ build / validate / list / show / log / review.
             Console.Error.WriteLine("Usage: imp log <task-id>");
             return 1;
         }
-        Console.Write(McpTools.GetLog(args[0]));
+        Console.Write(LifecycleCommands.GetLog(args[0]));
         return 0;
     }
 

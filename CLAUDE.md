@@ -34,12 +34,39 @@ DLL lock issues, no restart-to-pick-up-tool-changes.
 
 ## Layout
 
-Flat. `*.cs` + `*.csproj` at repo root. `project/` holds markdown
-design docs only. `Templates/` holds the contract skeleton and the
-proof-of-work example (printed by `imp template <name>`).
-`skills/imp.md` is the source of truth for how the parent model
-should use imp — copy or symlink it into Claude Code's skills
-directory.
+Code is grouped by domain into top-level folders, each its own
+subnamespace under `Imp`:
+
+- `Build/` (`Imp.Build`) — the build executor loop, contract parser,
+  apply_patch, worktree management, lifecycle CLI handlers
+  (`LifecycleCommands.cs`).
+- `Research/` (`Imp.Research`) — research mode (`imp research`):
+  orchestrator, executor, archive, report shape, mode definitions,
+  brief parser.
+- `Wiki/` (`Imp.Wiki`) — wiki mode (`imp wiki`): planner, page
+  renderer, index renderer, splitter, page-frontmatter reader,
+  index synthesizer.
+- `Tools/` (`Imp.Tools`) — executor tool surface: `Toolbox` factory,
+  `ExecutorState`, individual tool implementations (grep, todo).
+- `Safety/` (`Imp.Safety`) — pre-flight gates: command classifier,
+  network egress checker, doom-loop detector.
+- `Infrastructure/` (`Imp.Infrastructure`) — `ImpLog`, `Providers`,
+  `Prompts` (loader), `SandboxConfig`, `TraceWriter`, etc.
+- `Program.cs` at root in `namespace Imp;` — CLI dispatch only.
+
+Each subnamespace folder is independent enough that you can read it
+in isolation and form a useful mental model. Cross-domain dependencies
+are explicit via `using Imp.Foo;` at the top of each file.
+
+Auxiliary content:
+
+- `project/` — markdown design docs and plans only, no code.
+- `Prompts/` — prompt templates (system prompts and per-mode prompts)
+  copied to the build output as content.
+- `Templates/` — contract skeleton + proof-of-work example (printed
+  by `imp template <name>`).
+- `skills/imp.md` — source of truth for how the parent model should
+  use imp; copy or symlink into Claude Code's skills dir.
 
 ## Logging
 
@@ -50,9 +77,11 @@ start/finish, and any rejection reason. Per-contract trace artefacts
 still live at `<parent>/<repo>.worktrees/<T-NNN>.trace/` —
 `trace.jsonl`, `transcript.md`, `proof-of-work.json`.
 
-## Class names
+## Naming
 
-The static surface methods live in `McpTools.cs` for historical
-reasons (the file pre-dates the CLI rewrite). Rename is cosmetic and
-deferred — the methods are now CLI handlers, not MCP tool entry
-points.
+Three classes whose names match their subnamespace got disambiguated
+during the folder reorg: `Research` → `ResearchRunner`, `Wiki` →
+`WikiRunner`, `Tools` → `Toolbox`. C# can't tell `Research.RunAsync`
+apart from `namespace Imp.Research` otherwise. The CLI lifecycle
+handlers (originally in `McpTools.cs` from the MCP-server era) now
+live at `Build/LifecycleCommands.cs`.
