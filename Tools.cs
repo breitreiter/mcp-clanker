@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Extensions.AI;
 
@@ -380,14 +381,42 @@ public static class Tools
         args.Add("--memory"); args.Add(sandbox.MemoryLimit);
         args.Add("--cpus"); args.Add(sandbox.CpuLimit);
         args.Add("--pids-limit"); args.Add(sandbox.PidsLimit.ToString());
+
+        // On Linux, run as the host user so files written into /work
+        // (the bind-mounted worktree) are owned by the host user, not root.
+        // Otherwise `git worktree remove` and ordinary `rm` from the host
+        // fail on container-created files. Docker Desktop on Windows handles
+        // bind-mount ownership through its own translation layer — no flag
+        // needed there. macOS untested; treat as Windows-like for now.
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            args.Add("--user"); args.Add($"{Posix.GetUid()}:{Posix.GetGid()}");
+        }
+
+        // HOME=/tmp keeps dotnet's first-run state (telemetry, NuGet config)
+        // on a world-writable path inside the container. /tmp is wiped on --rm
+        // exit; the cost is dotnet's ~50ms first-run noise per contract,
+        // accepted to avoid a second persistent volume just for SDK state.
+        args.Add("--env"); args.Add("HOME=/tmp");
         args.Add("-v"); args.Add($"{Path.GetFullPath(cwd)}:/work");
-        args.Add("-v"); args.Add($"{sandbox.NugetVolume}:/root/.nuget/packages");
+        args.Add("-v"); args.Add($"{sandbox.NugetVolume}:/tmp/.nuget/packages");
         args.Add("-w"); args.Add("/work");
         args.Add(sandbox.Image);
         args.Add("/bin/bash");
         args.Add("-c");
         args.Add(command);
         return docker;
+    }
+
+    // libc bindings for resolving the host user/group at runtime, so the
+    // docker `--user` flag can match. Linux-only; the call site gates on
+    // RuntimeInformation.IsOSPlatform(OSPlatform.Linux).
+    static class Posix
+    {
+        [DllImport("libc")] static extern uint getuid();
+        [DllImport("libc")] static extern uint getgid();
+        public static uint GetUid() => getuid();
+        public static uint GetGid() => getgid();
     }
 
     // --- apply_patch ---

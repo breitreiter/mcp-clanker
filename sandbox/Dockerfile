@@ -15,6 +15,15 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends git \
  && rm -rf /var/lib/apt/lists/*
 
+# NuGet cache lives on a named volume mounted at /tmp/.nuget/packages.
+# On Linux, imp passes --user $(id -u):$(id -g) so files round-trip with
+# host ownership through the bind mount — but Docker initializes a new
+# named volume's root dir as 0:0 regardless of --user, copying perms from
+# the underlying image path. Pre-creating the path 1777 lets the volume
+# inherit world-writable+sticky on first init, so any runtime user can
+# populate the cache.
+RUN mkdir -p /tmp/.nuget/packages && chmod 1777 /tmp/.nuget/packages
+
 # Contract's bind-mounted worktree lands here. imp runs every bash
 # command with -w /work, so this is effectively $PWD for the contract.
 WORKDIR /work

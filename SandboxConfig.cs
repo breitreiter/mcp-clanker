@@ -28,7 +28,12 @@ public sealed record SandboxConfig(
     public static SandboxConfig Default { get; } = new(
         Mode: SandboxMode.Host,
         Image: "imp-sandbox:latest",
-        NugetVolume: "imp-nuget",
+        // Renamed from `imp-nuget` when the Docker branch switched to running
+        // as the host user on Linux (Tools.BuildBashProcess) — the old volume
+        // was populated under root and uid 1000 can't write to it. Fresh name
+        // means a fresh empty volume that gets correct ownership on first write.
+        // Operators can `docker volume rm imp-nuget` when convenient.
+        NugetVolume: "imp-nuget-cache",
         MemoryLimit: "2g",
         CpuLimit: "2",
         PidsLimit: 256,
