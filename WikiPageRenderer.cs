@@ -55,7 +55,11 @@ public static class WikiPageRenderer
     public static string RenderGenerated(WikiPageContext ctx, ResearchReport report)
     {
         var sb = new StringBuilder();
-        WriteFrontmatter(sb, ctx, status: "generated", extras: null);
+        var extras = new List<(string, string)>
+        {
+            ("synthesis_summary", QuoteYaml(SummariseSynthesis(report.Synthesis))),
+        };
+        WriteFrontmatter(sb, ctx, status: "generated", extras: extras);
         WriteHeading(sb, ctx);
 
         if (!string.IsNullOrWhiteSpace(report.Synthesis))
@@ -284,5 +288,19 @@ public static class WikiPageRenderer
     {
         var escaped = value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "");
         return $"\"{escaped}\"";
+    }
+
+    // Synthesis summary for the index: collapse whitespace, truncate to ~140
+    // chars at a word boundary. The full synthesis stays in the page body —
+    // this is purely so WikiIndexRenderer doesn't need to re-parse the body.
+    const int SynthesisSummaryMaxChars = 140;
+    static string SummariseSynthesis(string synthesis)
+    {
+        var collapsed = System.Text.RegularExpressions.Regex.Replace(synthesis ?? "", @"\s+", " ").Trim();
+        if (collapsed.Length <= SynthesisSummaryMaxChars) return collapsed;
+        var slice = collapsed[..SynthesisSummaryMaxChars];
+        var lastSpace = slice.LastIndexOf(' ');
+        if (lastSpace > SynthesisSummaryMaxChars * 3 / 4) slice = slice[..lastSpace];
+        return slice.TrimEnd(',', '.', ';', ':') + "…";
     }
 }

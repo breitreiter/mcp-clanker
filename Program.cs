@@ -43,6 +43,7 @@ public class Program
             "research" => await RunResearch(args[1..]),
             "wiki" => await RunWiki(args[1..]),
             "wiki-render-test" => RunWikiRenderTest(args[1..]),
+            "wiki-index-test" => RunWikiIndexTest(args[1..]),
             "validate" => await RunValidate(args[1..]),
             "review" => RunReview(args[1..]),
             "list" => RunList(),
@@ -379,6 +380,27 @@ build / validate / list / show / log / review.
             Error: null);
 
         Console.Write(WikiPageRenderer.Render(ctx, entry, report));
+        return 0;
+    }
+
+    // Hidden diagnostic: render the wiki index from a given directory.
+    //   imp wiki-index-test [wiki-dir]
+    // Defaults to <cwd>/wiki/. Useful for iterating on the index format
+    // against a synthesized fixture without dispatching a real run.
+    static int RunWikiIndexTest(string[] args)
+    {
+        var cwd = Path.GetFullPath(Directory.GetCurrentDirectory());
+        var wikiAbs = args.Length > 0 ? Path.GetFullPath(args[0]) : Path.Combine(cwd, "wiki");
+        if (!Directory.Exists(wikiAbs))
+        {
+            Console.Error.WriteLine($"wiki-index-test: directory does not exist: {wikiAbs}");
+            return 1;
+        }
+        var repoRoot = Path.GetDirectoryName(wikiAbs.TrimEnd(Path.DirectorySeparatorChar)) ?? cwd;
+        var wikiDir = Path.GetFileName(wikiAbs.TrimEnd(Path.DirectorySeparatorChar));
+        var (md, summary) = WikiIndexRenderer.RenderFromDirectory(repoRoot, wikiDir, DateTimeOffset.UtcNow);
+        Console.Error.WriteLine($"[imp] wiki-index-test: {summary.TotalPages} pages ({summary.Generated} generated, {summary.Oversized} oversized, {summary.Failed} failed)");
+        Console.Write(md);
         return 0;
     }
 

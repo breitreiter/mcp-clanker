@@ -258,26 +258,10 @@ public static class WikiPlanner
         }
     }
 
-    // Tiny YAML-frontmatter reader. Only fields read are source_tree_sha and
-    // status — both are flat strings. A real YAML parser is overkill for two
-    // fields against pages we wrote ourselves.
     static (string? Sha, string? Status) ReadPageFrontmatter(string pagePath)
     {
-        if (!File.Exists(pagePath)) return (null, null);
-        string text;
-        try { text = File.ReadAllText(pagePath); }
-        catch { return (null, null); }
-
-        var fmMatch = Regex.Match(text, @"^---\r?\n(.*?)\r?\n---\r?\n", RegexOptions.Singleline);
-        if (!fmMatch.Success) return (null, null);
-        var body = fmMatch.Groups[1].Value;
-
-        string? Read(string key) =>
-            Regex.Match(body, $@"^{Regex.Escape(key)}:\s*(\S+)\s*$", RegexOptions.Multiline) is { Success: true } m
-                ? m.Groups[1].Value
-                : null;
-
-        return (Read("source_tree_sha"), Read("status"));
+        var fm = WikiPageFrontmatterReader.Parse(pagePath);
+        return (fm?.SourceTreeSha, fm?.Status);
     }
 
     static string NormalizeRelative(string p) =>
