@@ -1,10 +1,15 @@
 # imp wiki — feature plan
 
-> Status: design sketch (2026-05-08). Not implemented. Builds on
-> research mode (`project/research-mode-plan.md`, shipped). Targets
-> a v0 that lands per-directory wiki generation with a static
-> oversized stub; adaptive splitting and drift detection are
-> downstream.
+> Status: v0 shipped (2026-05-09). Build-order items 1–8 landed
+> across commits `29428cc..59bc2b2`; item 11a (model-rendered
+> README) followed. Per-directory wiki generation, oversized-stub
+> fallback, model-written index with deterministic fallback, and
+> SHA cache all work end-to-end against Qwen on the imp repo
+> (Prompts/ in 7 turns, Templates/ in 4 turns, re-run cache hits in
+> 0.12s, README synthesis ~20s on Qwen). Adaptive splitting,
+> per-target brief tailoring, drift detection, and parallel dispatch
+> (items 10, 11, 11b, 12, 13) remain post-v0; the `*(later)*`
+> markers in the build order below are still the canonical backlog.
 
 A third top-level command alongside `imp build` and `imp research`.
 Walks a target tree (default: repo root), runs research mode against

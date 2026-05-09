@@ -109,16 +109,26 @@ public static class Wiki
             WikiArchive.WriteManifest(archiveDir, manifest);
         }
 
-        // Regenerate the index after all per-target work — picks up newly
-        // written pages and refreshes the table in case any frontmatter
-        // changed. Cheap (frontmatter-only walk); always safe to re-run.
+        // Regenerate the index after all per-target work. The body is
+        // model-rendered via the orchestrator role (Wiki:Provider) when
+        // pages exist; on any failure we fall back to the deterministic
+        // v0 blockquote so the README always builds.
         try
         {
-            var (indexMd, _) = WikiIndexRenderer.RenderFromDirectory(manifest.RepoRoot, manifest.WikiDir, DateTimeOffset.UtcNow);
+            var entries = WikiIndexRenderer.LoadEntries(manifest.RepoRoot, manifest.WikiDir);
+            var indexSummary = WikiIndexRenderer.SummariseEntries(entries);
+
+            string? modelBody = null;
+            if (entries.Count > 0)
+            {
+                modelBody = await TrySynthesizeIndexBodyAsync(config, manifest, entries);
+            }
+
+            var indexMd = WikiIndexRenderer.Render(entries, indexSummary, DateTimeOffset.UtcNow, modelBody);
             var indexPath = Path.Combine(manifest.RepoRoot, manifest.WikiDir, "README.md");
             Directory.CreateDirectory(Path.GetDirectoryName(indexPath)!);
             File.WriteAllText(indexPath, indexMd);
-            ImpLog.Info($"wiki: index regenerated at {indexPath}");
+            ImpLog.Info($"wiki: index regenerated at {indexPath} (model_body={(modelBody is null ? "no" : "yes")})");
         }
         catch (Exception ex)
         {
@@ -142,6 +152,33 @@ public static class Wiki
         ImpLog.Info($"wiki: complete wikiId={manifest.WikiId} written={result.PagesWritten} skipped={result.PagesSkippedUnchanged} stub={result.PagesOversizedStub} failed={result.PagesFailed} cost={result.EstimatedCostUsd} wall={result.WallSeconds}s");
 
         return JsonSerializer.Serialize(result, ResultJsonOpts);
+    }
+
+    static async Task<string?> TrySynthesizeIndexBodyAsync(
+        IConfiguration config,
+        WikiManifest manifest,
+        IReadOnlyList<WikiIndexEntry> entries)
+    {
+        var orchestratorProvider = config["Wiki:Provider"] ?? config["ActiveProvider"];
+        if (string.IsNullOrEmpty(orchestratorProvider))
+        {
+            ImpLog.Info("wiki: no Wiki:Provider or ActiveProvider; using deterministic index body");
+            return null;
+        }
+
+        try
+        {
+            var orchestrator = Providers.CreateForProvider(config, orchestratorProvider);
+            var repoName = Path.GetFileName(manifest.RepoRoot.TrimEnd(Path.DirectorySeparatorChar));
+            ImpLog.Info($"wiki: synthesizing index body via {orchestratorProvider} (entries={entries.Count})");
+            var body = await WikiIndexSynthesizer.RenderBodyAsync(orchestrator, entries, repoName);
+            return body;
+        }
+        catch (Exception ex)
+        {
+            ImpLog.Error($"wiki: orchestrator index synthesis failed, falling back to deterministic: {ex.Message}");
+            return null;
+        }
     }
 
     static IConfigurationSection? ResolveProviderSection(IConfiguration config, string? activeProvider)

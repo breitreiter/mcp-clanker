@@ -15,16 +15,21 @@ namespace Imp;
 public static class Providers
 {
     public static IChatClient Create(IConfiguration root)
+        => CreateForProvider(root, root["ActiveProvider"]
+            ?? throw new InvalidOperationException("ActiveProvider is not set in configuration."));
+
+    // Build a chat client for a named ChatProvider entry. Used by `imp wiki`
+    // to construct an orchestrator-role client (Wiki:Provider names a
+    // ChatProvider that may differ from the research executor's provider —
+    // typically a higher-context-tolerance model for synthesis).
+    public static IChatClient CreateForProvider(IConfiguration root, string providerName)
     {
-        var active = root["ActiveProvider"]
-            ?? throw new InvalidOperationException("ActiveProvider is not set in configuration.");
-
         var section = root.GetSection("ChatProviders").GetChildren()
-            .FirstOrDefault(p => string.Equals(p["Name"], active, StringComparison.OrdinalIgnoreCase))
+            .FirstOrDefault(p => string.Equals(p["Name"], providerName, StringComparison.OrdinalIgnoreCase))
             ?? throw new InvalidOperationException(
-                $"ActiveProvider '{active}' not found in ChatProviders[].");
+                $"Provider '{providerName}' not found in ChatProviders[].");
 
-        return active.ToLowerInvariant() switch
+        return providerName.ToLowerInvariant() switch
         {
             "azurefoundry" => CreateAzureFoundry(section),
             "azureopenai" => CreateAzureOpenAI(section),
@@ -32,7 +37,7 @@ public static class Providers
             "anthropic" => CreateAnthropic(section),
             "gemini" => CreateGemini(section),
             "qwen" => CreateQwen(section),
-            _ => throw new InvalidOperationException($"Unknown provider: {active}"),
+            _ => throw new InvalidOperationException($"Unknown provider: {providerName}"),
         };
     }
 
