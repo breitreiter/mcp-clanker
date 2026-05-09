@@ -1,15 +1,16 @@
 # imp wiki — feature plan
 
-> Status: v0 shipped (2026-05-09). Build-order items 1–8 landed
-> across commits `29428cc..59bc2b2`; item 11a (model-rendered
-> README) followed. Per-directory wiki generation, oversized-stub
-> fallback, model-written index with deterministic fallback, and
-> SHA cache all work end-to-end against Qwen on the imp repo
-> (Prompts/ in 7 turns, Templates/ in 4 turns, re-run cache hits in
-> 0.12s, README synthesis ~20s on Qwen). Adaptive splitting,
-> per-target brief tailoring, drift detection, and parallel dispatch
-> (items 10, 11, 11b, 12, 13) remain post-v0; the `*(later)*`
-> markers in the build order below are still the canonical backlog.
+> Status: v0 + adaptive splitting shipped (2026-05-09). Build-order
+> items 1–8, 11a (model-rendered README), and 11 (adaptive splitting)
+> are landed. Oversized dirs are now split via an orchestrator
+> (Haiku 4.5) cluster proposal validated and bin-packed in code,
+> dispatched as N research runs against the wiki executor (Qwen).
+> Validated end-to-end on the imp repo: `project/` (217KB, 12 files)
+> split into 8 cohesive clusters with all pages generated and the
+> README synthesized over the full coverage. Per-target brief
+> tailoring (11b), drift detection (10), parallel dispatch (12), and
+> --check-drift (13) remain post-v0; the `*(later)*` markers in the
+> build order below are still the canonical backlog.
 
 A third top-level command alongside `imp build` and `imp research`.
 Walks a target tree (default: repo root), runs research mode against

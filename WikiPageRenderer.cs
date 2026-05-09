@@ -34,7 +34,12 @@ public sealed record WikiPageContext(
     string? ResearchId,
     int GeneratorVersion,
     DateTimeOffset GeneratedAt,
-    bool? WorktreeDirty);
+    bool? WorktreeDirty,
+    // Cluster-only fields (item 11 adaptive splitting). Null on regular
+    // dir pages. ClusterFiles scopes the citation in-target check.
+    string? ClusterSlug = null,
+    string? ClusterRationale = null,
+    IReadOnlyList<string>? ClusterFiles = null);
 
 public static class WikiPageRenderer
 {
@@ -67,7 +72,7 @@ public static class WikiPageRenderer
             sb.Append("> ").Append(report.Synthesis.Trim().Replace("\n", "\n> ")).Append("\n\n");
         }
 
-        var (inTarget, outOfTarget) = SplitFindingsByLocation(report.Findings, ctx.SourcePath);
+        var (inTarget, outOfTarget) = SplitFindingsByLocation(report.Findings, ctx.SourcePath, ctx.ClusterFiles);
         var pageDepth = PageDepth(ctx.PagePath);
 
         if (inTarget.Count > 0)
@@ -169,6 +174,17 @@ public static class WikiPageRenderer
         sb.Append("status: ").Append(status).Append('\n');
         if (ctx.WorktreeDirty == true)
             sb.Append("worktree_dirty: true\n");
+        if (ctx.ClusterSlug is not null)
+        {
+            sb.Append("cluster_slug: ").Append(ctx.ClusterSlug).Append('\n');
+            if (!string.IsNullOrWhiteSpace(ctx.ClusterRationale))
+                sb.Append("cluster_rationale: ").Append(QuoteYaml(ctx.ClusterRationale!)).Append('\n');
+            if (ctx.ClusterFiles is { Count: > 0 } files)
+            {
+                sb.Append("cluster_files:\n");
+                foreach (var f in files) sb.Append("  - ").Append(f).Append('\n');
+            }
+        }
         if (extras is not null)
             foreach (var (k, v) in extras) sb.Append(k).Append(": ").Append(v).Append('\n');
         sb.Append("---\n\n");
@@ -176,15 +192,24 @@ public static class WikiPageRenderer
 
     static void WriteHeading(StringBuilder sb, WikiPageContext ctx)
     {
-        var title = ctx.SourcePath.Length == 0 ? "(repo root)" : ctx.SourcePath;
+        var basePath = ctx.SourcePath.Length == 0 ? "(repo root)" : ctx.SourcePath;
+        var title = ctx.ClusterSlug is null
+            ? basePath
+            : $"{basePath} / {ctx.ClusterSlug}";
         sb.Append("# ").Append(title).Append("\n\n");
+        if (ctx.ClusterSlug is not null && !string.IsNullOrWhiteSpace(ctx.ClusterRationale))
+            sb.Append("> _Cluster: ").Append(ctx.ClusterRationale).Append("_\n\n");
     }
 
     static (List<Finding> InTarget, List<Finding> OutOfTarget) SplitFindingsByLocation(
-        IReadOnlyList<Finding> findings, string sourcePath)
+        IReadOnlyList<Finding> findings, string sourcePath, IReadOnlyList<string>? clusterFiles)
     {
         var inTarget = new List<Finding>();
         var outOfTarget = new List<Finding>();
+        var clusterSet = clusterFiles is null
+            ? null
+            : new HashSet<string>(clusterFiles.Select(f => f.Replace('\\', '/').TrimStart('/')), StringComparer.Ordinal);
+
         foreach (var f in findings)
         {
             var primary = f.Citations?.FirstOrDefault(c => c.Kind == CitationKind.File);
@@ -193,7 +218,10 @@ public static class WikiPageRenderer
                 inTarget.Add(f);
                 continue;
             }
-            (CitationIsInTarget(primary, sourcePath) ? inTarget : outOfTarget).Add(f);
+            var isIn = clusterSet is not null
+                ? clusterSet.Contains(primary.Path.Replace('\\', '/').TrimStart('/'))
+                : CitationIsInTarget(primary, sourcePath);
+            (isIn ? inTarget : outOfTarget).Add(f);
         }
         return (inTarget, outOfTarget);
     }

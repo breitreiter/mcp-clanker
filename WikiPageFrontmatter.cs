@@ -22,7 +22,8 @@ public sealed record WikiPageFrontmatter(
     string? Model,
     bool? WorktreeDirty,
     string? Error,
-    long? Threshold);
+    long? Threshold,
+    string? ClusterSlug);
 
 public static class WikiPageFrontmatterReader
 {
@@ -56,7 +57,8 @@ public static class WikiPageFrontmatterReader
             Model: ReadBareToken(body, "model"),
             WorktreeDirty: ReadBool(body, "worktree_dirty"),
             Error: ReadString(body, "error"),
-            Threshold: ReadLong(body, "threshold"));
+            Threshold: ReadLong(body, "threshold"),
+            ClusterSlug: ReadBareToken(body, "cluster_slug"));
     }
 
     static string? ReadBareToken(string body, string key)

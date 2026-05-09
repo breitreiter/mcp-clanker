@@ -59,7 +59,11 @@ public static class WikiIndexRenderer
                 Frontmatter: fm));
         }
 
-        entries.Sort((a, b) => string.Compare(a.SourcePath, b.SourcePath, StringComparison.Ordinal));
+        entries.Sort((a, b) =>
+        {
+            var byPath = string.Compare(a.SourcePath, b.SourcePath, StringComparison.Ordinal);
+            return byPath != 0 ? byPath : string.Compare(a.PageRelativePath, b.PageRelativePath, StringComparison.Ordinal);
+        });
         return entries;
     }
 
@@ -114,8 +118,14 @@ public static class WikiIndexRenderer
             var generated = ShortDate(fm.GeneratedAt);
             var summaryText = SummaryFor(fm);
 
+            // Cluster pages display "<sourcePath> / <slug>" so multiple
+            // clusters of the same parent dir don't all read as the same row.
+            var displayPath = string.IsNullOrEmpty(fm.ClusterSlug)
+                ? entry.SourcePath
+                : $"{entry.SourcePath} / {fm.ClusterSlug}";
+
             sb.Append("| [")
-              .Append(EscapeTableCell(entry.SourcePath))
+              .Append(EscapeTableCell(displayPath))
               .Append("](")
               .Append(entry.PageRelativePath)
               .Append(") | ").Append(EscapeTableCell(status))

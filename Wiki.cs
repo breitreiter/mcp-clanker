@@ -102,7 +102,31 @@ public static class Wiki
                 continue;
             }
 
-            ImpLog.Info($"wiki: target {i + 1}/{manifest.Targets.Count} {entry.SourcePath} decision={entry.Decision}");
+            // Adaptive splitting: a fresh STUB without a cluster_slug is
+            // a candidate for the orchestrator-driven splitter. If the
+            // splitter succeeds, the entry is replaced in-place by N
+            // cluster entries; manifest is rewritten so a crash mid-run
+            // resumes against the cluster set, not the original stub.
+            if (entry.Decision == WikiDecision.Stub && entry.ClusterSlug is null)
+            {
+                var clusterEntries = await TrySplitStubAsync(config, manifest, entry);
+                if (clusterEntries is not null)
+                {
+                    ImpLog.Info($"wiki: target {i + 1}/{manifest.Targets.Count} {entry.SourcePath} split into {clusterEntries.Count} clusters");
+                    manifest.Targets.RemoveAt(i);
+                    manifest.Targets.InsertRange(i, clusterEntries);
+                    WikiArchive.WriteManifest(archiveDir, manifest);
+                    // Delete any legacy parent stub at <wikiDir>/<sourcePath>.md
+                    // — its slot is now covered by the cluster pages under
+                    // <wikiDir>/<sourcePath>/.
+                    DeleteLegacyParentStub(manifest, entry.SourcePath);
+                    i--; // re-enter the loop at the first cluster entry
+                    continue;
+                }
+                ImpLog.Info($"wiki: target {i + 1}/{manifest.Targets.Count} {entry.SourcePath} splitter unavailable or failed; emitting v0 stub");
+            }
+
+            ImpLog.Info($"wiki: target {i + 1}/{manifest.Targets.Count} {entry.SourcePath} decision={entry.Decision}{(entry.ClusterSlug is null ? "" : $" cluster={entry.ClusterSlug}")}");
             var (updated, cost) = await ProcessTargetAsync(chat, config, manifest, entry, modelName);
             manifest.Targets[i] = updated;
             totalCost += cost;
@@ -152,6 +176,100 @@ public static class Wiki
         ImpLog.Info($"wiki: complete wikiId={manifest.WikiId} written={result.PagesWritten} skipped={result.PagesSkippedUnchanged} stub={result.PagesOversizedStub} failed={result.PagesFailed} cost={result.EstimatedCostUsd} wall={result.WallSeconds}s");
 
         return JsonSerializer.Serialize(result, ResultJsonOpts);
+    }
+
+    // Adaptive splitting (item 11). Calls the orchestrator with the
+    // dir's file list; on success, returns N cluster entries to replace
+    // the stub. On any failure (no provider, validation error, model
+    // error), returns null and the caller falls back to the v0 stub.
+    static async Task<List<WikiManifestEntry>?> TrySplitStubAsync(
+        IConfiguration config,
+        WikiManifest manifest,
+        WikiManifestEntry stubEntry)
+    {
+        var orchestratorProvider = config["Wiki:Provider"] ?? config["ActiveProvider"];
+        if (string.IsNullOrEmpty(orchestratorProvider))
+        {
+            ImpLog.Info($"wiki: no orchestrator provider configured; cannot split {stubEntry.SourcePath}");
+            return null;
+        }
+
+        WikiSplitProposal proposal;
+        try
+        {
+            var orchestrator = Providers.CreateForProvider(config, orchestratorProvider);
+            ImpLog.Info($"wiki: requesting cluster proposal for {stubEntry.SourcePath} via {orchestratorProvider}");
+            proposal = await WikiSplitter.ProposeAsync(
+                orchestrator: orchestrator,
+                repoRoot: manifest.RepoRoot,
+                sourcePath: stubEntry.SourcePath,
+                maxDirBytes: manifest.MaxDirBytes);
+        }
+        catch (Exception ex)
+        {
+            ImpLog.Error($"wiki: splitter failed for {stubEntry.SourcePath}: {ex.Message}");
+            return null;
+        }
+
+        var entries = new List<WikiManifestEntry>();
+        foreach (var cluster in proposal.Clusters)
+        {
+            var pagePath = ClusterPagePath(manifest.WikiDir, stubEntry.SourcePath, cluster.Slug);
+            entries.Add(new WikiManifestEntry(
+                SourcePath: stubEntry.SourcePath,
+                PagePath: pagePath,
+                Decision: WikiDecision.Run,
+                SourceTreeSha: ClusterSha(cluster),
+                SourceBytes: cluster.TotalBytes,
+                FileCount: cluster.Files.Count,
+                Status: WikiEntryStatus.Pending,
+                ResearchId: null,
+                ResearchArchive: null,
+                StartedAt: null,
+                CompletedAt: null,
+                Error: null,
+                ClusterSlug: cluster.Slug,
+                ClusterRationale: cluster.Rationale,
+                ClusterFiles: cluster.Files));
+        }
+        return entries;
+    }
+
+    static string ClusterPagePath(string wikiDir, string sourcePath, string clusterSlug)
+    {
+        var combined = string.IsNullOrEmpty(sourcePath) ? clusterSlug : $"{sourcePath}/{clusterSlug}";
+        return Path.Combine(wikiDir, combined + ".md").Replace('\\', '/');
+    }
+
+    static void DeleteLegacyParentStub(WikiManifest manifest, string sourcePath)
+    {
+        if (string.IsNullOrEmpty(sourcePath)) return;
+        var stubPath = Path.Combine(manifest.RepoRoot, manifest.WikiDir, sourcePath + ".md");
+        if (File.Exists(stubPath))
+        {
+            try
+            {
+                File.Delete(stubPath);
+                ImpLog.Info($"wiki: removed legacy parent stub {stubPath}");
+            }
+            catch (Exception ex)
+            {
+                ImpLog.Error($"wiki: failed to remove legacy stub {stubPath}: {ex.Message}");
+            }
+        }
+    }
+
+    // Per-cluster cache key. Combines the cluster slug with the sorted file
+    // list so re-runs that yield the same proposal hit the SHA cache. Files
+    // changing under the cluster will rotate the SHA via the file list (not
+    // contents — coarse but correct for v0; cluster-content hashing is a
+    // post-v0 polish item).
+    static string ClusterSha(WikiClusterProposal cluster)
+    {
+        var sorted = cluster.Files.OrderBy(f => f, StringComparer.Ordinal);
+        var payload = cluster.Slug + "\0" + string.Join("\0", sorted);
+        var bytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(payload));
+        return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
     static async Task<string?> TrySynthesizeIndexBodyAsync(
@@ -311,7 +429,10 @@ public static class Wiki
             ResearchId: entry.ResearchId,
             GeneratorVersion: WikiPageRenderer.CurrentGeneratorVersion,
             GeneratedAt: entry.CompletedAt ?? DateTimeOffset.UtcNow,
-            WorktreeDirty: report?.WorktreeDirty);
+            WorktreeDirty: report?.WorktreeDirty,
+            ClusterSlug: entry.ClusterSlug,
+            ClusterRationale: entry.ClusterRationale,
+            ClusterFiles: entry.ClusterFiles);
 
         try
         {
@@ -351,12 +472,22 @@ public static class Wiki
     static TaskDescriptor BuildDescriptor(WikiManifest manifest, WikiManifestEntry entry)
     {
         var researchId = BriefParser.AllocateNextId(manifest.RepoRoot);
-        var displayPath = entry.SourcePath.Length == 0 ? "<repo root>" : entry.SourcePath;
-        var slug = BriefParser.SlugFrom("wiki-" + (entry.SourcePath.Length == 0 ? "root" : entry.SourcePath));
+        var isCluster = entry.ClusterSlug is not null;
+        var displayPath = isCluster
+            ? $"{(entry.SourcePath.Length == 0 ? "<repo root>" : entry.SourcePath)} ({entry.ClusterSlug} cluster)"
+            : entry.SourcePath.Length == 0 ? "<repo root>" : entry.SourcePath;
 
-        var sources = WikiPlanner.EnumerateSourceFiles(manifest.RepoRoot, entry.SourcePath);
+        var slugBase = entry.SourcePath.Length == 0 ? "root" : entry.SourcePath;
+        if (isCluster) slugBase += "-" + entry.ClusterSlug;
+        var slug = BriefParser.SlugFrom("wiki-" + slugBase);
 
-        var question = $"Produce a directory survey of {displayPath} suitable for a wiki page that describes the contents of this directory to a reader who has not seen the source.";
+        var sources = isCluster
+            ? entry.ClusterFiles ?? Array.Empty<string>()
+            : WikiPlanner.EnumerateSourceFiles(manifest.RepoRoot, entry.SourcePath);
+
+        var question = isCluster
+            ? $"Produce a wiki survey of the '{entry.ClusterSlug}' cluster of files inside {entry.SourcePath}. The cluster contains exactly the files listed under Sources — survey only those, no others."
+            : $"Produce a directory survey of {displayPath} suitable for a wiki page that describes the contents of this directory to a reader who has not seen the source.";
 
         var subQuestions = new[]
         {
@@ -365,8 +496,20 @@ public static class Wiki
             "What are the load-bearing types or functions?",
         };
 
+        // Cluster runs override the system prompt's step 1 (list_dir).
+        // The Sources list IS the inventory — listing the parent dir would
+        // dump sibling-cluster files into the executor's context and almost
+        // certainly cause it to survey the wrong files.
+        var clusterScope = isCluster
+            ? string.Join("\n",
+                $"This is a cluster of {sources.Count} file(s) inside {entry.SourcePath}; the parent dir has been split because its total size exceeds the per-page threshold.",
+                "**Skip step 1 of the system prompt (`list_dir`).** The file inventory is the Sources list below — read those files in order, write one finding per meaningful file, then call `finish_research`. Do not list the parent dir; do not read sibling-cluster files; do not read files at the repo root.",
+                $"Cluster rationale: {entry.ClusterRationale ?? "(none provided)"}.")
+            : "";
+
         var background = string.Join("\n",
             $"You are running in wiki mode against {displayPath}.",
+            clusterScope,
             $"Stay inside this directory; only read outside to resolve a cross-reference.",
             $"Tool budget for this run is {manifest.ToolBudget} calls.");
 
@@ -382,7 +525,7 @@ public static class Wiki
             Slug: slug,
             Question: question,
             SubQuestions: subQuestions,
-            SuggestedSources: sources,
+            SuggestedSources: sources is IReadOnlyList<string> roSources ? roSources : sources.ToList(),
             Forbidden: Array.Empty<string>(),
             Background: background,
             ExpectedOutput: expectedOutput,

@@ -35,7 +35,14 @@ public sealed record WikiManifestEntry(
     [property: JsonPropertyName("research_archive")] string? ResearchArchive,
     [property: JsonPropertyName("started_at")] DateTimeOffset? StartedAt,
     [property: JsonPropertyName("completed_at")] DateTimeOffset? CompletedAt,
-    [property: JsonPropertyName("error")] string? Error);
+    [property: JsonPropertyName("error")] string? Error,
+    // Cluster fields are populated only on entries born from adaptive
+    // splitting (item 11). When ClusterSlug is non-null, this entry covers
+    // a subset of the parent dir's files; ClusterFiles is the constrained
+    // file list passed to the executor as the brief's SuggestedSources.
+    [property: JsonPropertyName("cluster_slug")] string? ClusterSlug = null,
+    [property: JsonPropertyName("cluster_rationale")] string? ClusterRationale = null,
+    [property: JsonPropertyName("cluster_files")] IReadOnlyList<string>? ClusterFiles = null);
 
 public sealed record WikiManifest(
     [property: JsonPropertyName("wiki_id")] string WikiId,

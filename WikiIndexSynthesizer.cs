@@ -58,8 +58,8 @@ public static class WikiIndexSynthesizer
         sb.Append("Pages (")
           .Append(entries.Count)
           .Append("):\n\n");
-        sb.Append("| source_path | status | synthesis_summary |\n");
-        sb.Append("|---|---|---|\n");
+        sb.Append("| display | page_url | status | synthesis_summary |\n");
+        sb.Append("|---|---|---|---|\n");
         foreach (var e in entries)
         {
             var fm = e.Frontmatter;
@@ -73,7 +73,13 @@ public static class WikiIndexSynthesizer
                     _ => "(no summary)",
                 };
             }
-            sb.Append("| ").Append(EscapeCell(e.SourcePath))
+            // Display uses cluster slug when present so the model can tell
+            // sibling clusters apart; page_url is what the link must point at.
+            var display = string.IsNullOrEmpty(fm.ClusterSlug)
+                ? e.SourcePath
+                : $"{e.SourcePath} / {fm.ClusterSlug}";
+            sb.Append("| ").Append(EscapeCell(display))
+              .Append(" | ").Append(EscapeCell(e.PageRelativePath))
               .Append(" | ").Append(EscapeCell(fm.Status ?? "unknown"))
               .Append(" | ").Append(EscapeCell(summary))
               .Append(" |\n");

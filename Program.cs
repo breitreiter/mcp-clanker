@@ -44,6 +44,7 @@ public class Program
             "wiki" => await RunWiki(args[1..]),
             "wiki-render-test" => RunWikiRenderTest(args[1..]),
             "wiki-index-test" => RunWikiIndexTest(args[1..]),
+            "wiki-split-test" => await RunWikiSplitTest(args[1..]),
             "validate" => await RunValidate(args[1..]),
             "review" => RunReview(args[1..]),
             "list" => RunList(),
@@ -399,6 +400,46 @@ build / validate / list / show / log / review.
 
         Console.Write(WikiPageRenderer.Render(ctx, entry, report));
         return 0;
+    }
+
+    // Hidden diagnostic: call the splitter against a source-path and print
+    // the cluster proposal JSON. No dispatch, no page writes — pure model
+    // probe to iterate on the splitter prompt without burning a full wiki
+    // run. Uses Wiki:Provider (or ActiveProvider) like the real path.
+    //   imp wiki-split-test <source-path>
+    static async Task<int> RunWikiSplitTest(string[] args)
+    {
+        if (args.Length < 1)
+        {
+            Console.Error.WriteLine("Usage: imp wiki-split-test <source-path>");
+            return 1;
+        }
+        var sourcePath = args[0];
+        var repoRoot = Path.GetFullPath(Directory.GetCurrentDirectory());
+        var config = BuildConfiguration();
+        var provider = config["Wiki:Provider"] ?? config["ActiveProvider"];
+        if (string.IsNullOrEmpty(provider))
+        {
+            Console.Error.WriteLine("wiki-split-test: no Wiki:Provider or ActiveProvider configured");
+            return 1;
+        }
+        var maxDirBytes = long.TryParse(config["Wiki:MaxDirBytes"], out var mdb) && mdb > 0 ? mdb : 40960L;
+        var orchestrator = Providers.CreateForProvider(config, provider);
+
+        Console.Error.WriteLine($"[imp] wiki-split-test: source={sourcePath} threshold={maxDirBytes} provider={provider}");
+        try
+        {
+            var proposal = await WikiSplitter.ProposeAsync(orchestrator, repoRoot, sourcePath, maxDirBytes);
+            Console.Error.WriteLine($"[imp] wiki-split-test: {proposal.Clusters.Count} clusters");
+            var json = System.Text.Json.JsonSerializer.Serialize(proposal, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+            Console.WriteLine(json);
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"wiki-split-test: failed: {ex.Message}");
+            return 1;
+        }
     }
 
     // Hidden diagnostic: render the wiki index from a given directory.

@@ -7,7 +7,7 @@ Your job: write a short overview that orients a reader who has never seen this r
 - Output **only** the body markdown. Do not write a `# Heading`, do not write frontmatter, do not write a footer or "regenerated" line. The renderer wraps your output with all of that.
 - Start with a single short blockquote (`> _..._`) that captures what the repository is in one sentence. No more than ~30 words. This is the lede a reader sees first.
 - Then 1–4 short paragraphs (2–4 sentences each) grouping pages by *purpose*, not by status. Each paragraph names the relevant directories with markdown links to their pages.
-- Page links use the page's source path as the link text and `<source-path>.md` as the URL: e.g. `[Prompts](Prompts.md)`, `[src/Foo](src/Foo.md)`. The path inside the link must match the source path verbatim.
+- Page links use the table's `display` column as the link text and the table's `page_url` column as the URL — verbatim, character for character. Example: a row with display `project / wiki-plan` and page_url `project/wiki-plan.md` becomes `[project / wiki-plan](project/wiki-plan.md)`. Never invent URLs; never reuse a URL that isn't in the table; never link to a path that isn't on a row.
 - Mention oversized-stub and failed pages briefly in their natural place — they are gaps the reader should know about. Don't list them in a separate section.
 - Keep the whole output under ~250 words. The page table that follows your body is the navigation surface; you're writing the orientation, not the catalog.
 
