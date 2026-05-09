@@ -99,8 +99,9 @@ Create directories first:
 <location>/reference/
 ```
 
-Then write the files per the Templates section. Use today's date for
-any `INIT_DATE` placeholders (`date -u +%Y-%m-%d`).
+Then write the files per the Templates section. Run
+`date -u +%Y-%m-%d` once and substitute the result for any
+`INIT_DATE` placeholder in the templates.
 
 Apply the `CLAUDE.md` and `.gitignore` edits.
 
@@ -698,12 +699,12 @@ See `../_meta/conventions.md` for full conventions.
 ### `<repo>/CLAUDE.md` snippet (append, or create if missing)
 
 If `CLAUDE.md` exists, append the snippet below as a new section. If
-the section already exists (detect by the `## Project substrate`
+the section already exists (detect by the `## Project substrate (managed by /project-init)`
 heading), no-op. If `CLAUDE.md` doesn't exist, create it with this as
 the first section.
 
 ````markdown
-## Project substrate
+## Project substrate (managed by /project-init)
 
 This repo uses a structured project-knowledge substrate at `<location>/`.
 Read from it before answering questions about design, intent, or
@@ -760,7 +761,7 @@ If the line is already present, no-op.
   Treat as "partial init from a previous interrupted run." Resume:
   write only the missing files. Don't overwrite the existing
   conventions.
-- **`CLAUDE.md` exists with a `## Project substrate` heading already.**
+- **`CLAUDE.md` exists with a `## Project substrate (managed by /project-init)` heading already.**
   No-op on the snippet. Print: "Substrate section already in
   CLAUDE.md — leaving alone."
 - **`.gitignore` doesn't exist.** Create it with just the proposals
