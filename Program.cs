@@ -42,6 +42,7 @@ public class Program
             "build" => await RunBuild(args[1..]),
             "research" => await RunResearch(args[1..]),
             "wiki" => await RunWiki(args[1..]),
+            "wiki-render-test" => RunWikiRenderTest(args[1..]),
             "validate" => await RunValidate(args[1..]),
             "review" => RunReview(args[1..]),
             "list" => RunList(),
@@ -308,6 +309,78 @@ build / validate / list / show / log / review.
 
     static string SlugForRun(string targetSubpath)
         => string.IsNullOrEmpty(targetSubpath) ? "root" : BriefParser.SlugFrom(targetSubpath);
+
+    // Hidden diagnostic: render a wiki page from an existing report.json
+    // without dispatching a fresh research run. Used to iterate on the
+    // renderer / wiki prompt without burning model time. Not listed in help.
+    //   imp wiki-render-test <research-id> <source-path>
+    //   imp wiki-render-test R-001 ""
+    static int RunWikiRenderTest(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            Console.Error.WriteLine("Usage: imp wiki-render-test <research-id> <source-path>");
+            return 1;
+        }
+        var researchId = args[0];
+        var sourcePath = args[1];
+        var repoRoot = Path.GetFullPath(Directory.GetCurrentDirectory());
+
+        var researchesRoot = ResearchArchive.RootFor(repoRoot);
+        var match = Directory.EnumerateDirectories(researchesRoot)
+            .FirstOrDefault(d => Path.GetFileName(d).StartsWith(researchId + "-", StringComparison.OrdinalIgnoreCase));
+        if (match is null)
+        {
+            Console.Error.WriteLine($"wiki-render-test: no archive found for {researchId} under {researchesRoot}");
+            return 1;
+        }
+        var reportPath = Path.Combine(match, "report.json");
+        if (!File.Exists(reportPath))
+        {
+            Console.Error.WriteLine($"wiki-render-test: report.json missing in {match}");
+            return 1;
+        }
+        var report = System.Text.Json.JsonSerializer.Deserialize<ResearchReport>(
+            File.ReadAllText(reportPath), ResearchReportJson.Options);
+        if (report is null)
+        {
+            Console.Error.WriteLine($"wiki-render-test: failed to parse report.json");
+            return 1;
+        }
+
+        var pagePath = WikiPlanner.PageRelativePathFor(sourcePath, "wiki");
+        var ctx = new WikiPageContext(
+            PagePath: pagePath,
+            SourcePath: sourcePath,
+            SourceTreeSha: "stub-sha-for-render-test",
+            SourceBytes: 0,
+            FileCount: 0,
+            MaxDirBytes: 40960,
+            Mode: report.Mode,
+            ModelName: "render-test",
+            ProviderName: null,
+            ResearchId: researchId,
+            GeneratorVersion: WikiPageRenderer.CurrentGeneratorVersion,
+            GeneratedAt: DateTimeOffset.UtcNow,
+            WorktreeDirty: null);
+
+        var entry = new WikiManifestEntry(
+            SourcePath: sourcePath,
+            PagePath: pagePath,
+            Decision: WikiDecision.Run,
+            SourceTreeSha: ctx.SourceTreeSha,
+            SourceBytes: 0,
+            FileCount: 0,
+            Status: WikiEntryStatus.Done,
+            ResearchId: researchId,
+            ResearchArchive: match,
+            StartedAt: null,
+            CompletedAt: null,
+            Error: null);
+
+        Console.Write(WikiPageRenderer.Render(ctx, entry, report));
+        return 0;
+    }
 
     static async Task<int> RunValidate(string[] args)
     {
