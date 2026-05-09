@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 
 using Imp.Build;
 using Imp.Research;
+using Imp.Substrate;
 using Imp.Wiki;
 using Imp.Infrastructure;
 
@@ -46,6 +47,7 @@ public class Program
         {
             "build" => await RunBuild(args[1..]),
             "research" => await RunResearch(args[1..]),
+            "init" => ProjectInit.Run(args[1..]),
             "wiki" => await RunWiki(args[1..]),
             "wiki-render-test" => RunWikiRenderTest(args[1..]),
             "wiki-index-test" => RunWikiIndexTest(args[1..]),
@@ -97,6 +99,14 @@ Lifecycle:
   validate <contract-path>           Dry-run: parse + structural check, no model call.
   review <task-id>                   Bundled post-build view: proof-of-work + git diff.
                                      The canonical "what to do after a build" command.
+
+Substrate:
+  init [path] [--force]              Scaffold the project-substrate layout
+                                     (rules / aspirations / learnings / plans /
+                                     tasks / concepts) at <path> (default: project/).
+                                     Refuses if non-substrate content already
+                                     exists; --force regenerates skill-owned
+                                     files on re-init.
 
 Inspection:
   list                                List contracts under ./contracts/*.md (JSON).

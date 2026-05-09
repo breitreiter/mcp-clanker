@@ -1,0 +1,6 @@
+# Project substrate configuration. All keys optional; defaults shown.
+# Uncomment and edit as needed.
+
+# location: project/                       # substrate location, relative to repo root
+# proposals: ../{{REPO}}.project-proposals/  # imp proposal sidecar (gitignored)
+# tasks_path: project/tasks/               # or "TODO.md" for flat root tracking

@@ -1,9 +1,14 @@
-# `/project-init` — Spec
+# `imp init` — Spec
 
 > Scaffolds a project substrate (the structured layout from
-> `project-substrate-notes.md`) in the current repo. First skill in
-> the substrate suite. Does not migrate legacy content — that's
-> `/project-migrate`'s job.
+> `project-substrate-notes.md`) in the current repo. CLI command,
+> not a Claude Code skill — see substrate-notes Q13 for the
+> boundary. Does not migrate legacy content — that's
+> `/project-migrate`'s job (planned, Claude Code skill).
+>
+> **Implemented**: see `Substrate/ProjectInit.cs` and
+> `Substrate/Templates/`. Runs in ~60ms (templates are static
+> files copied with `{{REPO}}` and `{{INIT_DATE}}` substitution).
 
 ## Purpose
 
@@ -38,21 +43,33 @@ read and write.
 ## Invocation
 
 ```
-/project-init
-/project-init <path>     # location for the substrate; default project/
-/project-init --force    # overwrite existing stub READMEs (never user content)
+imp init                  # default location: project/
+imp init <path>           # custom location; must be relative, inside repo
+imp init --force          # regenerate skill-owned files on re-init
+imp init --help           # usage
 ```
 
-Interactive prompts on first run:
-1. Confirm substrate location (default `project/`, or whatever the
-   user typed).
-2. If location already exists with content, refuse and direct to
-   `/project-migrate`.
-3. Confirm CLAUDE.md edit — show diff, get sign-off.
-4. Confirm `.gitignore` edit — show diff, get sign-off.
+Non-interactive by design — runs in milliseconds and either
+succeeds or refuses with a clear message. Foreground Claude or the
+user reviews the resulting tree afterward (it's plain markdown,
+git-trackable). If the user wants pre-confirmation, Claude can
+preview the planned writes before invoking, but the CLI itself just
+does the work.
 
-After completion: print a short "what's here, what's next" summary
-and a pointer to `/project-migrate` for brownfield projects.
+Refusal cases:
+- Not in a git repo → "run `git init` first."
+- Location is absolute or escapes repo root → reject.
+- Location exists with non-substrate content → refuse, direct to
+  `/project-migrate` (planned).
+
+Re-init behavior:
+- Substrate already present (i.e. `<location>/_meta/conventions.md`
+  exists), no `--force` → no-op + status message.
+- Re-init with `--force` → regenerate skill-owned files (READMEs,
+  conventions, config) only. Never touch user-authored content.
+
+After completion: short "what's here, what's next" summary printed
+to stdout.
 
 ## Layout produced
 
@@ -225,29 +242,32 @@ and `<repo>.worktrees/` patterns. Init doesn't configure that.
 init does not create it; the proposals dir is the only sidecar
 init-time gitignore covers, and it's lazy-created on first proposal.)
 
-## Build order
+## Implementation reference
 
-1. Implement the layout writer (pure file creation, no model calls).
-2. Implement the `_meta/conventions.md` content (writes the
-   frontmatter spec and kind definitions verbatim from substrate
-   notes H0).
-3. Implement the per-kind README content (lifted from H0, one
-   paragraph each).
-4. Implement the CLAUDE.md / .gitignore edits with diff-and-confirm.
-5. Implement the existing-content detection and refusal path.
-6. Implement `--force` re-write of skill-owned files only.
-7. Manual test on a fresh repo.
-8. Manual test on imp's own repo (greenfield-ish — current `project/`
-   is plans-only, no substrate structure yet). Use `--into
-   project-substrate/` if needed to avoid clobbering existing plans.
+Shipped 2026-05-09. Files of interest:
 
-## Done when
+- `Substrate/ProjectInit.cs` — the command. Static `Run(string[] args)`
+  invoked from `Program.cs` dispatch. Pure file ops, no model calls.
+- `Substrate/Templates/` — static template files copied into the
+  substrate at runtime. `{{REPO}}` and `{{INIT_DATE}}` are the only
+  substitution tokens. Marked `CopyToOutputDirectory: PreserveNewest`
+  in `Imp.csproj` so they ship next to the DLL.
+- `Program.cs` — `"init" => ProjectInit.Run(args[1..])` plus the
+  Substrate section in usage output.
 
-- A fresh repo gets a working substrate scaffold.
-- imp's own repo gets a substrate scaffold (probably under a
-  separate dir to avoid disrupting current plan docs).
-- Foreground Claude, after reading the new CLAUDE.md section,
-  correctly orients to substrate paths when asked about project
-  knowledge.
-- The next skill in the chain (`/project-migrate` or `/project-sync`,
-  whichever lands next) finds the layout it expects.
+Run via `dotnet run -- init` during dev or `imp init` once installed.
+Typical run: ~60ms.
+
+## Why this is a CLI command, not a Claude Code skill
+
+(Decided 2026-05-09; the original spec assumed skill, that was
+wrong — see substrate-notes Q13 and the
+`feedback_skill_vs_imp_boundary` memory.)
+
+- Init is deterministic file scaffolding from static templates. No
+  synthesis, no judgment, no LLM-shaped work.
+- Implemented as a skill, the LLM regenerates template content on
+  every invocation (~5 minutes). Implemented as a CLI command, it's
+  60ms with templates as embedded content.
+- Foreground Claude can invoke `imp init` via Bash like any other
+  CLI tool when the user asks for substrate setup.

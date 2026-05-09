@@ -631,22 +631,32 @@ above is a strawman.
 
 ### Q13. Implementation surface: imp commands, Claude Code skills, or hybrid?
 
-**Resolved 2026-05-09: hybrid, with most weight on Claude Code skills
-+ scheduled routines.** See decisions log entry of the same date for
-the responsibility split. Summary:
+**Resolved 2026-05-09: hybrid. Refined later same day.** The boundary
+is **synthesis vs. static**, not "substrate vs. primitive."
 
-- **imp** owns the headless primitives — `imp build` (unchanged),
-  `imp research` (unchanged + optional `--substrate-aware` ambient
-  context flag), `imp wiki` (continues as the state-leg generator,
-  called by `/project-sync` rather than invoked directly).
-- **Claude Code skills** own the substrate operations —
-  `/project-init`, `/project-migrate`, `/project-lint`,
-  `/project-sync`, `/project-promote`. Skills orchestrate cloud
-  subagents (Sonnet/Haiku) for synthesis-heavy work and call imp
-  primitives where Qwen's strengths apply (narrow citation-heavy
-  research, e.g. per-rule lint checks).
+- **imp CLI** owns operations that are deterministic file ops with
+  no LLM-shaped work — `imp build` (unchanged), `imp research`
+  (unchanged + optional `--substrate-aware` ambient context),
+  `imp wiki` (state-leg generator), and **`imp init`** (substrate
+  scaffold; templates as embedded content; ~60ms per run).
+- **Claude Code skills** own operations that need synthesis,
+  judgment, or interactive review — `/project-promote` (interactive
+  proposal review), `/project-migrate` (multi-signal classification
+  of legacy docs, planned), `/project-sync` (cross-source concept
+  page synthesis, planned), `/project-lint` (drift detection +
+  triage, planned). Skills orchestrate cloud subagents
+  (Sonnet/Haiku) and call imp primitives where citation-heavy
+  research with Qwen fits.
 - **Scheduled routines** via the existing `schedule` skill:
   nightly cheap lint, weekly full sync, on-demand migration.
+
+**Heuristic:** if you find yourself writing the same template content
+on every invocation, you're using the wrong tool — it's an `imp` CLI
+command. If the operation needs LLM judgment per invocation
+(classification, synthesis, interactive review), it's a Claude Code
+skill. See the `feedback_skill_vs_imp_boundary` memory entry for the
+full reasoning, traced from the original `/project-init`-as-skill
+mistake.
 
 ### Q12. Top-level layout: by-kind or by-topic?
 
@@ -856,6 +866,17 @@ and require explicit classification?
   predicts the opposite (a doc gets refined when it's about to be
   set aside). Migration must use git dates + code-reference grep,
   not doc content alone. See H1 update.
+- **2026-05-09. `imp init` is a CLI command, not a Claude Code skill.**
+  Built /project-init as a skill first; user pushed back when it
+  took ~5 minutes per run because the LLM was regenerating ~14
+  static template files on each invocation. Re-implemented as
+  `imp init` in `Substrate/ProjectInit.cs` with templates as content
+  files in `Substrate/Templates/` shipped next to the DLL. Now runs
+  in ~60ms. Boundary refined: synthesis-vs-static, not
+  substrate-vs-primitive. See Q13 (revised) and the
+  `feedback_skill_vs_imp_boundary` memory entry. Other planned
+  skills (promote/migrate/sync/lint) are still skill-shaped — they
+  need LLM-shaped work.
 - **2026-05-09. Maintenance layer is Claude Code skills + cloud
   subagents, not new imp commands.** imp's strength is narrow
   headless primitives (build in worktree, citation-heavy research
