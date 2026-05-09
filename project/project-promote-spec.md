@@ -129,11 +129,14 @@ of past proposals — not in the substrate).
 Append to `project/log.md`:
 
 ```
-## [YYYY-MM-DD] promotion | <one-line summary>
+## [YYYY-MM-DD] promote | applied P-NNN
 
-Applied proposal P-NNN (<category>). Source: <generated_by>.
+Category: <category>. Source: <generated_by>.
 Affected: <list of paths>.
 ```
+
+(Kind is `promote` — the audit-trail entry. Avoid `promotion` here:
+that collides with one of the proposal *category* names.)
 
 ## Proposal file format
 
