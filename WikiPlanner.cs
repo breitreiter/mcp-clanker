@@ -177,7 +177,10 @@ public static class WikiPlanner
 
         var sha = ShaHex(raw);
 
-        if (fileCount > 0)
+        // Repo-root targets collide with wiki/README.md (the index slot) and
+        // adaptive splitting / repo-level synthesis is post-v0. Skip emitting
+        // the root as a target; the index renderer covers the README slot.
+        if (fileCount > 0 && relativePath.Length > 0)
         {
             var pagePath = PageRelativePathFor(relativePath, wikiDir);
             var pageAbs = Path.Combine(repoRoot, pagePath);

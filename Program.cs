@@ -83,10 +83,11 @@ Lifecycle:
     [--brief path]                   current checkout; --brief points at a structured
     [provider]                       brief markdown file. Emits report JSON to stdout
                                      and a sidecar archive to <repo>.researches/.
-  wiki [path] [--dry-run]            Plan a per-directory wiki survey of the repo (or
-                                     a subtree). --dry-run emits the SKIP/STUB/RUN plan
-                                     and exits; without it, the orchestrator runs (not
-                                     yet implemented).
+  wiki [path] [--dry-run]            Per-directory wiki survey of the repo (or subtree).
+    [--full] [--resume W-NNN]        Writes wiki/<path>.md per target and refreshes
+                                     wiki/README.md. --dry-run emits the plan only;
+                                     --full forces re-run on cache hits; --resume
+                                     continues an interrupted W-NNN.
   validate <contract-path>           Dry-run: parse + structural check, no model call.
   review <task-id>                   Bundled post-build view: proof-of-work + git diff.
                                      The canonical "what to do after a build" command.
@@ -209,11 +210,13 @@ build / validate / list / show / log / review.
         //   imp wiki --resume W-NNN   — resume an interrupted run from its manifest
         string? targetPath = null;
         bool dryRun = false;
+        bool full = false;
         string? resumeId = null;
         for (int i = 0; i < args.Length; i++)
         {
             var a = args[i];
             if (a == "--dry-run") dryRun = true;
+            else if (a == "--full") full = true;
             else if (a.StartsWith("--resume=", StringComparison.Ordinal))
                 resumeId = a["--resume=".Length..];
             else if (a == "--resume" && i + 1 < args.Length)
@@ -245,9 +248,9 @@ build / validate / list / show / log / review.
         // any positional path argument, dispatch unfinished targets.
         if (!string.IsNullOrEmpty(resumeId))
         {
-            if (!string.IsNullOrEmpty(targetPath) || dryRun)
+            if (!string.IsNullOrEmpty(targetPath) || dryRun || full)
             {
-                Console.Error.WriteLine("imp wiki: --resume cannot be combined with a target path or --dry-run");
+                Console.Error.WriteLine("imp wiki: --resume cannot be combined with a target path, --dry-run, or --full");
                 return 1;
             }
             var existing = WikiArchive.FindByWikiId(repoRoot, resumeId);
@@ -289,6 +292,21 @@ build / validate / list / show / log / review.
         }
 
         var plan = WikiPlanner.Plan(repoRoot, targetSubpath, wikiDir, maxDirBytes);
+
+        // --full: force RUN on cache hits. Stubs stay stubs (size threshold
+        // is a real constraint, not a cache decision).
+        if (full)
+        {
+            var rewritten = plan.Targets.Select(t =>
+                t.Decision == WikiDecision.Skip
+                    ? t with { Decision = WikiDecision.Run, Reason = "--full forced re-run" }
+                    : t).ToList();
+            var summary = new WikiPlanSummary(
+                Run: rewritten.Count(t => t.Decision == WikiDecision.Run),
+                Skip: 0,
+                Stub: rewritten.Count(t => t.Decision == WikiDecision.Stub));
+            plan = plan with { Targets = rewritten, Summary = summary };
+        }
 
         if (dryRun)
         {

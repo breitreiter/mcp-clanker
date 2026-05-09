@@ -32,11 +32,12 @@ public sealed record WikiResult(
     [property: JsonPropertyName("repo_root")] string RepoRoot,
     [property: JsonPropertyName("wiki_dir")] string WikiDir,
     [property: JsonPropertyName("archive_dir")] string ArchiveDir,
-    [property: JsonPropertyName("pages_run")] int PagesRun,
-    [property: JsonPropertyName("pages_skipped")] int PagesSkipped,
-    [property: JsonPropertyName("pages_stub")] int PagesStub,
+    [property: JsonPropertyName("pages_written")] int PagesWritten,
+    [property: JsonPropertyName("pages_skipped_unchanged")] int PagesSkippedUnchanged,
+    [property: JsonPropertyName("pages_oversized_stub")] int PagesOversizedStub,
     [property: JsonPropertyName("pages_failed")] int PagesFailed,
-    [property: JsonPropertyName("wall_seconds")] double WallSeconds);
+    [property: JsonPropertyName("wall_seconds")] double WallSeconds,
+    [property: JsonPropertyName("estimated_cost_usd")] decimal EstimatedCostUsd);
 
 public static class Wiki
 {
@@ -84,6 +85,10 @@ public static class Wiki
     {
         ImpLog.Info($"wiki: start wikiId={manifest.WikiId} archive={archiveDir} targets={manifest.Targets.Count}");
         var sw = Stopwatch.StartNew();
+        decimal totalCost = 0m;
+        var providerName = config["ActiveProvider"];
+        var providerSection = ResolveProviderSection(config, providerName);
+        var modelName = providerSection?["Model"];
 
         Directory.CreateDirectory(archiveDir);
         WikiArchive.WriteManifest(archiveDir, manifest);
@@ -98,9 +103,26 @@ public static class Wiki
             }
 
             ImpLog.Info($"wiki: target {i + 1}/{manifest.Targets.Count} {entry.SourcePath} decision={entry.Decision}");
-            var updated = await ProcessTargetAsync(chat, config, manifest, entry);
+            var (updated, cost) = await ProcessTargetAsync(chat, config, manifest, entry, modelName);
             manifest.Targets[i] = updated;
+            totalCost += cost;
             WikiArchive.WriteManifest(archiveDir, manifest);
+        }
+
+        // Regenerate the index after all per-target work — picks up newly
+        // written pages and refreshes the table in case any frontmatter
+        // changed. Cheap (frontmatter-only walk); always safe to re-run.
+        try
+        {
+            var (indexMd, _) = WikiIndexRenderer.RenderFromDirectory(manifest.RepoRoot, manifest.WikiDir, DateTimeOffset.UtcNow);
+            var indexPath = Path.Combine(manifest.RepoRoot, manifest.WikiDir, "README.md");
+            Directory.CreateDirectory(Path.GetDirectoryName(indexPath)!);
+            File.WriteAllText(indexPath, indexMd);
+            ImpLog.Info($"wiki: index regenerated at {indexPath}");
+        }
+        catch (Exception ex)
+        {
+            ImpLog.Error($"wiki: index regen failed: {ex.Message}");
         }
 
         sw.Stop();
@@ -110,69 +132,80 @@ public static class Wiki
             RepoRoot: manifest.RepoRoot,
             WikiDir: manifest.WikiDir,
             ArchiveDir: archiveDir,
-            PagesRun: manifest.Targets.Count(t => t.Decision == WikiDecision.Run && t.Status == WikiEntryStatus.Done),
-            PagesSkipped: manifest.Targets.Count(t => t.Status == WikiEntryStatus.Skipped),
-            PagesStub: manifest.Targets.Count(t => t.Decision == WikiDecision.Stub && t.Status == WikiEntryStatus.Done),
+            PagesWritten: manifest.Targets.Count(t => t.Decision == WikiDecision.Run && t.Status == WikiEntryStatus.Done),
+            PagesSkippedUnchanged: manifest.Targets.Count(t => t.Status == WikiEntryStatus.Skipped),
+            PagesOversizedStub: manifest.Targets.Count(t => t.Decision == WikiDecision.Stub && t.Status == WikiEntryStatus.Done),
             PagesFailed: manifest.Targets.Count(t => t.Status == WikiEntryStatus.Failed),
-            WallSeconds: Math.Round(sw.Elapsed.TotalSeconds, 2));
+            WallSeconds: Math.Round(sw.Elapsed.TotalSeconds, 2),
+            EstimatedCostUsd: Math.Round(totalCost, 4));
 
-        ImpLog.Info($"wiki: complete wikiId={manifest.WikiId} run={result.PagesRun} skipped={result.PagesSkipped} stub={result.PagesStub} failed={result.PagesFailed} wall={result.WallSeconds}s");
+        ImpLog.Info($"wiki: complete wikiId={manifest.WikiId} written={result.PagesWritten} skipped={result.PagesSkippedUnchanged} stub={result.PagesOversizedStub} failed={result.PagesFailed} cost={result.EstimatedCostUsd} wall={result.WallSeconds}s");
 
         return JsonSerializer.Serialize(result, ResultJsonOpts);
     }
 
-    static async Task<WikiManifestEntry> ProcessTargetAsync(
+    static IConfigurationSection? ResolveProviderSection(IConfiguration config, string? activeProvider)
+    {
+        if (string.IsNullOrEmpty(activeProvider)) return null;
+        return config.GetSection("ChatProviders").GetChildren()
+            .FirstOrDefault(p => string.Equals(p["Name"], activeProvider, StringComparison.OrdinalIgnoreCase));
+    }
+
+    static async Task<(WikiManifestEntry Entry, decimal Cost)> ProcessTargetAsync(
         IChatClient chat,
         IConfiguration config,
         WikiManifest manifest,
-        WikiManifestEntry entry)
+        WikiManifestEntry entry,
+        string? modelName)
     {
         var startedAt = DateTimeOffset.UtcNow;
 
         switch (entry.Decision)
         {
             case WikiDecision.Skip:
-                return entry with
+                return (entry with
                 {
                     Status = WikiEntryStatus.Skipped,
                     StartedAt = startedAt,
                     CompletedAt = DateTimeOffset.UtcNow,
-                };
+                }, 0m);
 
             case WikiDecision.Stub:
-                // Step 5 (renderer) will write the stub page on disk; step 4
-                // just records the decision in the manifest. The renderer
-                // reads manifest entries with decision=Stub and emits the
-                // canonical oversized-stub markdown.
-                return entry with
+            {
+                var stubEntry = entry with
                 {
                     Status = WikiEntryStatus.Done,
                     StartedAt = startedAt,
                     CompletedAt = DateTimeOffset.UtcNow,
                 };
+                WritePage(manifest, stubEntry, report: null, modelName);
+                return (stubEntry, 0m);
+            }
 
             case WikiDecision.Run:
-                return await DispatchRunAsync(chat, config, manifest, entry, startedAt);
+                return await DispatchRunAsync(chat, config, manifest, entry, startedAt, modelName);
 
             default:
-                return entry with
+                return (entry with
                 {
                     Status = WikiEntryStatus.Failed,
                     StartedAt = startedAt,
                     CompletedAt = DateTimeOffset.UtcNow,
                     Error = $"unknown decision: {entry.Decision}",
-                };
+                }, 0m);
         }
     }
 
-    static async Task<WikiManifestEntry> DispatchRunAsync(
+    static async Task<(WikiManifestEntry Entry, decimal Cost)> DispatchRunAsync(
         IChatClient chat,
         IConfiguration config,
         WikiManifest manifest,
         WikiManifestEntry entry,
-        DateTimeOffset startedAt)
+        DateTimeOffset startedAt,
+        string? modelName)
     {
         var descriptor = BuildDescriptor(manifest, entry);
+        var researchArchive = ResearchArchive.DirectoryFor(manifest.RepoRoot, descriptor);
 
         string envelope;
         try
@@ -188,22 +221,25 @@ public static class Wiki
         catch (Exception ex)
         {
             ImpLog.Error($"wiki: dispatch failed sourcePath={entry.SourcePath} researchId={descriptor.ResearchId}: {ex.Message}");
-            return entry with
+            var failed = entry with
             {
                 Status = WikiEntryStatus.Failed,
                 ResearchId = descriptor.ResearchId,
-                ResearchArchive = ResearchArchive.DirectoryFor(manifest.RepoRoot, descriptor),
+                ResearchArchive = researchArchive,
                 StartedAt = startedAt,
                 CompletedAt = DateTimeOffset.UtcNow,
                 Error = ex.Message,
             };
+            WritePage(manifest, failed, report: null, modelName);
+            return (failed, 0m);
         }
 
         var (terminal, error) = ParseEnvelopeOutcome(envelope);
-        var researchArchive = ResearchArchive.DirectoryFor(manifest.RepoRoot, descriptor);
         var status = terminal == "success" ? WikiEntryStatus.Done : WikiEntryStatus.Failed;
+        var report = LoadReport(researchArchive);
+        var cost = status == WikiEntryStatus.Done ? (report?.Usage?.EstimatedCostUsd ?? 0m) : 0m;
 
-        return entry with
+        var updated = entry with
         {
             Status = status,
             ResearchId = descriptor.ResearchId,
@@ -212,6 +248,61 @@ public static class Wiki
             CompletedAt = DateTimeOffset.UtcNow,
             Error = status == WikiEntryStatus.Failed ? (error ?? terminal ?? "unknown") : null,
         };
+
+        WritePage(manifest, updated, status == WikiEntryStatus.Done ? report : null, modelName);
+        return (updated, cost);
+    }
+
+    // Render the per-target page and write it under wiki/<...>.md. Skips
+    // empty source paths (those would collide with the index slot). Failures
+    // here are non-fatal — logged, and the manifest is still updated. The
+    // next run picks up the missing page via the SHA-mismatch path.
+    static void WritePage(WikiManifest manifest, WikiManifestEntry entry, ResearchReport? report, string? modelName)
+    {
+        if (string.IsNullOrEmpty(entry.SourcePath)) return;
+
+        var ctx = new WikiPageContext(
+            PagePath: entry.PagePath,
+            SourcePath: entry.SourcePath,
+            SourceTreeSha: entry.SourceTreeSha,
+            SourceBytes: entry.SourceBytes,
+            FileCount: entry.FileCount,
+            MaxDirBytes: manifest.MaxDirBytes,
+            Mode: "wiki",
+            ModelName: modelName,
+            ProviderName: null,
+            ResearchId: entry.ResearchId,
+            GeneratorVersion: WikiPageRenderer.CurrentGeneratorVersion,
+            GeneratedAt: entry.CompletedAt ?? DateTimeOffset.UtcNow,
+            WorktreeDirty: report?.WorktreeDirty);
+
+        try
+        {
+            var markdown = WikiPageRenderer.Render(ctx, entry, report);
+            var absPath = Path.Combine(manifest.RepoRoot, entry.PagePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(absPath)!);
+            File.WriteAllText(absPath, markdown);
+        }
+        catch (Exception ex)
+        {
+            ImpLog.Error($"wiki: page write failed sourcePath={entry.SourcePath} pagePath={entry.PagePath}: {ex.Message}");
+        }
+    }
+
+    static ResearchReport? LoadReport(string researchArchive)
+    {
+        var reportPath = Path.Combine(researchArchive, "report.json");
+        if (!File.Exists(reportPath)) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<ResearchReport>(
+                File.ReadAllText(reportPath), ResearchReportJson.Options);
+        }
+        catch (Exception ex)
+        {
+            ImpLog.Error($"wiki: report load failed at {reportPath}: {ex.Message}");
+            return null;
+        }
     }
 
     // Synthesise a TaskDescriptor for a wiki survey of the target directory.
