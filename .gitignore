@@ -6,3 +6,5 @@ appsettings.local.json
 .idea/
 .claude/
 *.user
+imp.imp-proposals/
+.imp/
