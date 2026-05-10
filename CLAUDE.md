@@ -43,9 +43,9 @@ subnamespace under `Imp`:
 - `Research/` (`Imp.Research`) — research mode (`imp research`):
   orchestrator, executor, archive, report shape, mode definitions,
   brief parser.
-- `Wiki/` (`Imp.Wiki`) — wiki mode (`imp wiki`): planner, page
-  renderer, index renderer, splitter, page-frontmatter reader,
-  index synthesizer.
+- `Wiki/` (`Imp.Wiki`) — **DEPRECATED, pending removal** (see
+  `plans/wiki-deprecation.md`). Superseded by the substrate. Kept
+  in-tree as reference for ongoing substrate work; do not extend.
 - `Tools/` (`Imp.Tools`) — executor tool surface: `Toolbox` factory,
   `ExecutorState`, individual tool implementations (grep, todo).
 - `Safety/` (`Imp.Safety`) — pre-flight gates: command classifier,

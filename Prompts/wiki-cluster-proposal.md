@@ -1,3 +1,5 @@
+<!-- DEPRECATED 2026-05-10. Used only by `imp wiki`, which is itself deprecated and pending removal. See plans/wiki-deprecation.md. -->
+
 You are proposing how to split an oversized source directory into reviewable clusters. The wiki executor has a 32K context window and a per-cluster byte threshold; this directory exceeds the threshold and cannot be surveyed in one pass.
 
 # Output

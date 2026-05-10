@@ -94,11 +94,10 @@ Lifecycle:
     [--brief path]                   current checkout; --brief points at a structured
     [provider]                       brief markdown file. Emits report JSON to stdout
                                      and a sidecar archive to <repo>.researches/.
-  wiki [path] [--dry-run]            Per-directory wiki survey of the repo (or subtree).
-    [--full] [--resume W-NNN]        Writes wiki/<path>.md per target and refreshes
-                                     wiki/README.md. --dry-run emits the plan only;
-                                     --full forces re-run on cache hits; --resume
-                                     continues an interrupted W-NNN.
+  wiki [path] [--dry-run]            DEPRECATED, pending removal. Superseded by the
+    [--full] [--resume W-NNN]        substrate (`imp/`, via `imp tidy`). Still works;
+                                     prints a stderr warning on use. See
+                                     plans/wiki-deprecation.md.
   validate <contract-path>           Dry-run: parse + structural check, no model call.
   review <task-id>                   Bundled post-build view: proof-of-work + git diff.
                                      The canonical "what to do after a build" command.
@@ -250,6 +249,11 @@ build / validate / list / show / log / review.
 
     static async Task<int> RunWiki(string[] args)
     {
+        // DEPRECATED 2026-05-10. Superseded by the substrate (`imp/`,
+        // maintained by `imp tidy`). Kept as reference; removal pending.
+        // See plans/wiki-deprecation.md.
+        Console.Error.WriteLine("[imp] WARNING: `imp wiki` is deprecated and pending removal. See plans/wiki-deprecation.md.");
+
         // Accepted forms:
         //   imp wiki                  — plan whole repo, dispatch
         //   imp wiki src/Foo          — plan subtree, dispatch

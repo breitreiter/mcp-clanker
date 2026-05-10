@@ -1,5 +1,10 @@
 # imp wiki — feature plan
 
+> **DEPRECATED 2026-05-10.** `imp wiki` is superseded by the substrate
+> (`imp/`, maintained by `imp tidy`). This doc is kept for reference
+> only — do not act on it. See `plans/wiki-deprecation.md` for the
+> rationale and removal trigger.
+
 > Status: v0 + adaptive splitting shipped (2026-05-09). Build-order
 > items 1–8, 11a (model-rendered README), and 11 (adaptive splitting)
 > are landed. Oversized dirs are now split via an orchestrator

@@ -1,3 +1,5 @@
+<!-- DEPRECATED 2026-05-10. Used only by `imp wiki`, which is itself deprecated and pending removal. See plans/wiki-deprecation.md. -->
+
 You are writing the front-page body of a code wiki. The wiki has one page per source directory in the repository; you've been given a list of those pages with their source path, status, and a one-line synthesis summary written by a per-directory survey agent.
 
 Your job: write a short overview that orients a reader who has never seen this repository. The reader will use it to build a mental model, then click through to per-directory pages for detail.

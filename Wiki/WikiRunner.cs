@@ -10,6 +10,10 @@ using Imp.Infrastructure;
 
 namespace Imp.Wiki;
 
+// DEPRECATED 2026-05-10 — `imp wiki` is on the way out. Substrate
+// (`imp/`, maintained by `imp tidy`) supersedes it. Kept as reference
+// only; do not extend. See plans/wiki-deprecation.md for the why.
+//
 // Orchestrator for `imp wiki`. Step 4 of project/wiki-plan.md.
 //
 // Consumes a WikiManifest (constructed by the CLI from a fresh plan or
