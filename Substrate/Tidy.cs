@@ -76,13 +76,17 @@ public static class Tidy
 
         var triagePromptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "tidy-triage.md");
         var draftPromptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "tidy-draft.md");
-        if (!File.Exists(triagePromptPath) || !File.Exists(draftPromptPath))
+        var proposalPromptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "tidy-proposal.md");
+        if (!File.Exists(triagePromptPath) || !File.Exists(draftPromptPath) || !File.Exists(proposalPromptPath))
         {
             Console.Error.WriteLine($"imp tidy: prompt files not found at {Path.GetDirectoryName(triagePromptPath)}");
             return 2;
         }
         var triageSystemPrompt = await File.ReadAllTextAsync(triagePromptPath);
         var draftSystemPrompt = await File.ReadAllTextAsync(draftPromptPath);
+        var proposalSystemPrompt = await File.ReadAllTextAsync(proposalPromptPath);
+
+        var proposalsDir = ResolveProposalsDir(repoRoot);
 
         var stats = new RunStats();
 
@@ -124,9 +128,10 @@ public static class Tidy
 
                     case "rule-suggestion":
                     case "plan-suggestion":
-                        Console.WriteLine($"      cross-boundary → deferred (v0a)");
-                        if (!dryRun) MoveTo(notePath, Path.Combine(substrateDir, "note", "discarded", "cross-boundary-deferred"));
-                        stats.Deferred++;
+                        await HandleProposalAsync(
+                            chat, proposalSystemPrompt,
+                            substrateDir, proposalsDir, notePath, noteName,
+                            body, frontmatter, triage, dryRun, stats);
                         break;
 
                     case "noise":
@@ -413,6 +418,164 @@ public static class Tidy
         return rest[(endIdx + 4)..].ToString();
     }
 
+    // ── proposal handling (cross-boundary: rule-suggestion / plan-suggestion) ──
+
+    sealed record ProposalPhaseResult(
+        [property: JsonPropertyName("rationale")] string Rationale,
+        [property: JsonPropertyName("preview_body")] string PreviewBody);
+
+    static async Task HandleProposalAsync(
+        IChatClient chat, string proposalPrompt,
+        string substrateDir, string proposalsDir,
+        string notePath, string noteName,
+        string body, IReadOnlyDictionary<string, string> frontmatter,
+        TriageResult triage, bool dryRun, RunStats stats)
+    {
+        var phaseOutput = await DraftProposalAsync(chat, proposalPrompt, body, frontmatter, triage);
+        if (phaseOutput is null || string.IsNullOrWhiteSpace(phaseOutput.Rationale) || string.IsNullOrWhiteSpace(phaseOutput.PreviewBody))
+        {
+            Console.WriteLine($"      proposal phase failed → leaving in inbox");
+            stats.Failed++;
+            return;
+        }
+
+        var targetKind = triage.Classification == "rule-suggestion" ? "rule" : "plan";
+        var targetDir = targetKind == "rule" ? "rules" : "plans";
+        var slug = SlugifyTitle(triage.Title);
+        var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+        var sourceNoteId = Path.GetFileNameWithoutExtension(noteName);
+
+        Directory.CreateDirectory(proposalsDir);
+        var proposalId = NextProposalId(proposalsDir, today);
+        var proposalFilename = $"{proposalId}-{slug}.md";
+        var proposalFullPath = Path.Combine(proposalsDir, proposalFilename);
+
+        var targetEntryPath = $"{targetDir}/{slug}.md";
+        var proposalContent = BuildProposal(
+            proposalId, today, triage,
+            phaseOutput.Rationale, phaseOutput.PreviewBody,
+            targetKind, targetEntryPath, sourceNoteId);
+
+        Console.WriteLine($"      → {proposalsDir.TrimEnd('/').Split('/').Last()}/{proposalFilename}");
+
+        if (dryRun) { stats.Proposed++; return; }
+
+        await File.WriteAllTextAsync(proposalFullPath, proposalContent);
+        MoveTo(notePath, Path.Combine(substrateDir, "note", "processed"));
+        stats.Proposed++;
+    }
+
+    static async Task<ProposalPhaseResult?> DraftProposalAsync(IChatClient chat, string systemPrompt, string body, IReadOnlyDictionary<string, string> noteMeta, TriageResult triage)
+    {
+        var user = BuildDraftUserMessage(body, noteMeta, triage);
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.System, systemPrompt),
+            new(ChatRole.User, user),
+        };
+        var options = new ChatOptions { MaxOutputTokens = 1500 };
+        var resp = await chat.GetResponseAsync(messages, options);
+        var text = resp.Text?.Trim();
+        if (string.IsNullOrEmpty(text)) return null;
+
+        var json = ExtractJsonObject(text);
+        if (json is null) { ImpLog.Warn($"tidy.proposal: response not parseable JSON: {text[..Math.Min(200, text.Length)]}"); return null; }
+
+        try
+        {
+            return JsonSerializer.Deserialize<ProposalPhaseResult>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true,
+            });
+        }
+        catch (JsonException ex)
+        {
+            ImpLog.Warn($"tidy.proposal: deserialize failed: {ex.Message}");
+            return null;
+        }
+    }
+
+    static string BuildProposal(
+        string proposalId, string todayUtc, TriageResult triage,
+        string rationale, string previewBody,
+        string targetKind, string targetEntryPath, string sourceNoteId)
+    {
+        var nowIso = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
+        var category = triage.Classification == "rule-suggestion" ? "rule_candidate" : "plan_candidate";
+
+        // Preview frontmatter — the would-be entry's frontmatter, code-built.
+        var pfm = new StringBuilder();
+        pfm.Append($"kind: {targetKind}\n");
+        pfm.Append($"title: {triage.Title}\n");
+        pfm.Append($"created: {todayUtc}\n");
+        pfm.Append($"updated: {todayUtc}\n");
+        pfm.Append($"status: current\n");
+        if (targetKind == "plan") pfm.Append($"state: exploring\n");
+        pfm.Append("touches:\n");
+        pfm.Append($"  files: [{FormatYamlList(triage.Touches?.Files)}]\n");
+        pfm.Append($"  symbols: [{FormatYamlList(triage.Touches?.Symbols)}]\n");
+        pfm.Append($"  features: [{FormatYamlList(triage.Touches?.Features)}]\n");
+        pfm.Append("provenance:\n");
+        pfm.Append($"  author: imp-gnome\n");
+        pfm.Append($"  origin: note:{sourceNoteId}\n");
+
+        var sb = new StringBuilder();
+        sb.Append("---\n");
+        sb.Append($"proposal_id: {proposalId}\n");
+        sb.Append($"generated_at: {nowIso}\n");
+        sb.Append($"generated_by: imp-tidy\n");
+        sb.Append($"category: {category}\n");
+        sb.Append($"status: pending\n");
+        sb.Append("---\n\n");
+        sb.Append($"# Proposal: {triage.Title}\n\n");
+        sb.Append("## Rationale\n\n");
+        sb.Append(rationale.Trim()).Append("\n\n");
+        sb.Append("## Proposed changes\n\n");
+        sb.Append("```yaml\n");
+        sb.Append("changes:\n");
+        sb.Append($"  - type: create\n");
+        sb.Append($"    path: {targetEntryPath}\n");
+        sb.Append($"    preview: preview-1\n");
+        sb.Append("```\n\n");
+        sb.Append("## Preview: preview-1\n\n");
+        sb.Append("````markdown\n");
+        sb.Append("---\n");
+        sb.Append(pfm);
+        sb.Append("---\n\n");
+        sb.Append(previewBody.Trim()).Append("\n");
+        sb.Append("````\n");
+        return sb.ToString();
+    }
+
+    // Default proposals dir: parent of repo root, sibling of repo, named
+    // "<repo-basename>.imp-proposals". Matches `imp init`'s gitignore upsert.
+    static string ResolveProposalsDir(string repoRoot)
+    {
+        var repoBase = Path.GetFileName(repoRoot.TrimEnd(Path.DirectorySeparatorChar));
+        var parent = Path.GetDirectoryName(repoRoot.TrimEnd(Path.DirectorySeparatorChar))
+            ?? throw new InvalidOperationException($"repo root has no parent: {repoRoot}");
+        return Path.Combine(parent, $"{repoBase}.imp-proposals");
+    }
+
+    // Allocates the next P-YYYY-MM-DD-NNN id in the proposals dir for today's
+    // date. Scans existing P-{date}-*.md filenames, finds max NNN, increments.
+    static string NextProposalId(string proposalsDir, string date)
+    {
+        int next = 1;
+        if (Directory.Exists(proposalsDir))
+        {
+            foreach (var path in Directory.EnumerateFiles(proposalsDir, $"P-{date}-*.md", SearchOption.TopDirectoryOnly))
+            {
+                var name = Path.GetFileNameWithoutExtension(path);
+                // Format: P-YYYY-MM-DD-NNN-<slug> — split on '-' and take index 4
+                var parts = name.Split('-', 6);
+                if (parts.Length < 5) continue;
+                if (int.TryParse(parts[4], out var seq) && seq >= next) next = seq + 1;
+            }
+        }
+        return $"P-{date}-{next:D3}";
+    }
+
     static (string Filename, string FullPath) ResolveEntryPath(string entryDir, string date, string slug)
     {
         var baseName = string.IsNullOrEmpty(slug) ? date : $"{date}-{slug}";
@@ -456,7 +619,7 @@ public static class Tidy
         var date = DateTime.UtcNow.ToString("yyyy-MM-dd");
         var entry = $"## [{date}] tidy | {stats.Summary()}\n\n" +
                     $"Processed inbox: {stats.Learnings} learning(s), {stats.References} reference(s), " +
-                    $"{stats.Deferred} deferred (cross-boundary), {stats.Discarded} discarded, " +
+                    $"{stats.Proposed} proposal(s), {stats.Discarded} discarded, " +
                     $"{stats.Failed} failed.\n";
         File.WriteAllText(logPath, existing + separator + entry);
     }
@@ -555,16 +718,16 @@ public static class Tidy
     {
         public int Learnings;
         public int References;
+        public int Proposed;
         public int Drafted;          // dry-run only
-        public int Deferred;
         public int Discarded;
         public int Failed;
 
-        public int Total => Learnings + References + Drafted + Deferred + Discarded + Failed;
-        public bool AnyChanges => Learnings > 0 || References > 0 || Deferred > 0 || Discarded > 0;
+        public int Total => Learnings + References + Proposed + Drafted + Discarded + Failed;
+        public bool AnyChanges => Learnings > 0 || References > 0 || Proposed > 0 || Discarded > 0;
 
         public string Summary() =>
-            $"{Total} note(s): {Learnings + References + Drafted} entry(s), {Deferred} deferred, {Discarded} discarded, {Failed} failed";
+            $"{Total} note(s): {Learnings + References + Drafted} entry(s), {Proposed} proposal(s), {Discarded} discarded, {Failed} failed";
     }
 
     // ── usage ─────────────────────────────────────────────────────
