@@ -305,6 +305,17 @@ git, not approval queues.
   model section). Imp writes directly to its own dir; proposals
   exist only for cross-boundary edits to root-level human dirs.
 
+## Relationship to existing `imp wiki`
+
+`imp wiki` produces LLM-driven per-directory surveys at
+`wiki/<path>.md`, committed with the codebase. It overlaps with what
+this snapshot would call layer 2 (per-file/concept-style narrative)
+but takes the DeepWiki shape — auto-fabricated descriptions of code,
+no rationale grounding. Kept as a working reference and orientation
+tool while `imp tidy` is built. Expected to retire once tidy
+produces compelling layer-2 output (per-file digests grounded in
+layer 1 rationale + layer 0 structural extracts).
+
 ## Out of scope
 
 - Embedding/RAG retrieval. Per-project substrate is too small to

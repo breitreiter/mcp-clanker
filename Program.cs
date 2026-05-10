@@ -50,6 +50,7 @@ public class Program
             "init" => ProjectInit.Run(args[1..]),
             "signals" => Signals.Run(args[1..]),
             "note" => Note.Run(args[1..]),
+            "tidy" => await RunTidy(args[1..]),
             "wiki" => await RunWiki(args[1..]),
             "wiki-render-test" => RunWikiRenderTest(args[1..]),
             "wiki-index-test" => RunWikiIndexTest(args[1..]),
@@ -123,6 +124,12 @@ Substrate:
                                      $EDITOR; `-` reads stdin. The gnome
                                      processes inbox items into layer-1
                                      entries on a later `imp tidy` run.
+  tidy [--dry-run]                   The gnome. Processes notes from
+                                     imp/note/inbox/ into layer-1 entries
+                                     (learnings, references) via triage +
+                                     draft LLM phases. Cross-boundary
+                                     suggestions deferred. --dry-run shows
+                                     what would happen without writing.
 
 Inspection:
   list                                List contracts under ./contracts/*.md (JSON).
@@ -231,6 +238,14 @@ build / validate / list / show / log / review.
         var json = await ResearchRunner.RunAsync(chat, config, mode, question, briefPath);
         Console.WriteLine(json);
         return 0;
+    }
+
+    static async Task<int> RunTidy(string[] args)
+    {
+        var config = BuildConfiguration();
+        var chat = Providers.Create(config);
+        Console.Error.WriteLine($"[imp] tidy start: provider={config["ActiveProvider"]} cwd={Directory.GetCurrentDirectory()}");
+        return await Tidy.RunAsync(chat, args);
     }
 
     static async Task<int> RunWiki(string[] args)
