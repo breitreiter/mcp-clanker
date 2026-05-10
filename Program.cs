@@ -48,6 +48,7 @@ public class Program
             "build" => await RunBuild(args[1..]),
             "research" => await RunResearch(args[1..]),
             "init" => ProjectInit.Run(args[1..]),
+            "signals" => Signals.Run(args[1..]),
             "wiki" => await RunWiki(args[1..]),
             "wiki-render-test" => RunWikiRenderTest(args[1..]),
             "wiki-index-test" => RunWikiIndexTest(args[1..]),
@@ -107,6 +108,11 @@ Substrate:
                                      Refuses if non-substrate content already
                                      exists; --force regenerates skill-owned
                                      files on re-init.
+  signals <doc> [--json]             Gather per-doc signals for migration
+                                     classification: git dates, structure,
+                                     self-labels, cross-refs, code-reference
+                                     presence. Mechanical only; consumed by
+                                     /project-migrate.
 
 Inspection:
   list                                List contracts under ./contracts/*.md (JSON).
