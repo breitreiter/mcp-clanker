@@ -19,10 +19,10 @@ Full snapshot in `substrate-layers.md`. Headlines:
   a pre-rendered `imp/_index/` directory. Reads use the agent's
   existing `Read`/`Glob`/`Grep`. Cline's "no index" stance applied
   to substrate.
-- Authoring inversion: humans/agents capture into `imp stash`;
+- Authoring inversion: humans/agents capture into `imp note`;
   the gnome generates layer 1 entries overnight. Direct authoring
   is reserved for `rules/`.
-- Surviving CLI surface: `imp stash`, `imp tidy`, `imp init`.
+- Surviving CLI surface: `imp note`, `imp tidy`, `imp init`.
   Reads are filesystem-only.
 
 ## [2026-05-10] rename | project/ → imp/
@@ -30,7 +30,7 @@ Full snapshot in `substrate-layers.md`. Headlines:
 Substrate dir renamed to make tool ownership explicit by name.
 `plans/`, `bugs/`, `TODO.md`, and `rules/` lifted to repo root as
 human-owned dirs. Inside `imp/`: gnome-maintained content
-(`log.md`, `stash/`, `learnings/`, `reference/`, `concepts/`,
+(`log.md`, `note/`, `learnings/`, `reference/`, `concepts/`,
 `_index/`) plus `_meta/` for substrate conventions.
 
 Dropped: `aspirations/` (folds into CLAUDE.md), `tasks/` (TODO.md
@@ -39,6 +39,15 @@ covers it).
 Open question: whether `<repo>.project-proposals/` follows to
 `<repo>.imp-proposals/` — affects the `project-promote` skill and
 existing docs.
+
+## [2026-05-10] rename | stash → note (CLI verb)
+
+`imp stash` renamed to `imp note` to avoid conversational and
+muscle-memory collisions with `git stash`. The dominant capture
+verb (90% case: agent calls `imp note "<text>"` mid-conversation)
+needed a name unambiguous from "stash these changes." Output
+phrasing followed: `noted <id>: <echo>`. Inbox path is now
+`imp/note/inbox/`. nb's substrate dirs renamed to match.
 
 ## [2026-05-10] research | code intelligence prior art surveyed
 

@@ -49,6 +49,7 @@ public class Program
             "research" => await RunResearch(args[1..]),
             "init" => ProjectInit.Run(args[1..]),
             "signals" => Signals.Run(args[1..]),
+            "note" => Note.Run(args[1..]),
             "wiki" => await RunWiki(args[1..]),
             "wiki-render-test" => RunWikiRenderTest(args[1..]),
             "wiki-index-test" => RunWikiIndexTest(args[1..]),
@@ -113,6 +114,12 @@ Substrate:
                                      self-labels, cross-refs, code-reference
                                      presence. Mechanical only; consumed by
                                      /project-migrate.
+  note [<text> | -]                  Append a capture to the substrate's
+                                     note inbox. `imp note "<text>"` is
+                                     the dominant case; no args opens
+                                     $EDITOR; `-` reads stdin. The gnome
+                                     processes inbox items into layer-1
+                                     entries on a later `imp tidy` run.
 
 Inspection:
   list                                List contracts under ./contracts/*.md (JSON).

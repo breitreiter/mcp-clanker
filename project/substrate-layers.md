@@ -115,10 +115,10 @@ Full layout (at repo root):
   imp/                          # gnome territory
     _meta/                      # human (rare) — substrate conventions
     log.md                      # gnome — append-only history
-    stash/                      # write target (humans/agents append; gnome processes)
+    note/                       # write target (humans/agents append; gnome processes)
       inbox/, processed/, discarded/
-    learnings/                  # gnome from stash — rationale entries
-    reference/                  # gnome from stash URLs — archived sources
+    learnings/                  # gnome from notes — rationale entries
+    reference/                  # gnome from note URLs — archived sources
     concepts/                   # gnome (layer 2) — narrative pages
     _index/                     # gnome (layer 3) — query layout
       by-file/<path>.md
@@ -169,39 +169,39 @@ Conventions the layout depends on:
 Reads collapse into the filesystem. The CLI is for writes and
 orchestration only:
 
-- `imp stash <text>` — capture (the dominant usage).
+- `imp note <text>` — capture (the dominant usage).
 - `imp tidy` — gnome action; regenerates `_index/`, processes
-  stash, runs drift checks.
+  notes, runs drift checks.
 - `imp init` — bootstrap a new substrate.
 
 ## Authoring inversion
 
-Humans/agents do not author layer 1 directly. They write into a
-**stash**; the gnome (nightly `imp tidy`) generates layer 1 entries
-from stash items.
+Humans/agents do not author layer 1 directly. They write **notes**
+into a note inbox; the gnome (nightly `imp tidy`) generates layer 1
+entries from note items.
 
-Stash CLI:
+Note CLI:
 
-- `imp stash <text>` — one-shot capture (the 90% case)
-- `imp stash` (opens `$EDITOR`), `imp stash -` (stdin)
+- `imp note <text>` — one-shot capture (the 90% case)
+- `imp note` (opens `$EDITOR`), `imp note -` (stdin)
 - Auto-captured metadata: timestamp, repo, `IMP_SOURCE` env,
   `git rev-parse HEAD`
-- Storage: `imp/stash/inbox/<timestamp>-<slug>.md`, append-only;
+- Storage: `imp/note/inbox/<timestamp>-<slug>.md`, append-only;
   gnome moves to `processed/` or `discarded/<reason>/`
 - URLs/refs inline in body; gnome detects and archives at tidy time
-- Mgmt subcommands (rare): `imp stash {ls, show, edit, drop, flush}`
-- Stash CLI stays dumb; smarts live in `imp tidy`
+- Mgmt subcommands (rare): `imp note {ls, show, edit, drop, flush}`
+- Note CLI stays dumb; smarts live in `imp tidy`
 
 Output format (tuned for Claude relaying back):
 
 ```
-$ imp stash "<text>"
-stashed 2026-05-10-141233: <text echo>
+$ imp note "<text>"
+noted 2026-05-10-141233: <text echo>
 ```
 
 Gnome triggers (auto-proposes layer 1 entries from):
 
-- Stash items (primary)
+- Note items (primary)
 - Commits that revert other commits in the same week
 - Code comments matching `hack:|workaround:|because |XXX`
 - Repeated orientation questions in agent sessions (once logged)
@@ -217,7 +217,7 @@ Anti-noise defenses:
 
 Research-source durability:
 
-- Stash with URL → gnome fetches, archives locally, submits to
+- Note with URL → gnome fetches, archives locally, submits to
   Wayback Machine, generates `reference/` entry + cross-links to
   whatever code/decision the source influenced.
 
@@ -231,13 +231,13 @@ Human-owned conventions live at the repo root, not under `imp/`:
 - `TODO.md` — running todo list.
 - `rules/` — hard project invariants. Substrate-shaped (frontmatter
   entries with `touches:`) so the gnome can flag drift, but
-  authored directly by humans, not via stash. The only layer 1
+  authored directly by humans, not via note. The only layer 1
   folder lifted out of `imp/`.
 
 `imp init` creates these as scaffolding. Imp does not own
 `plans/`, `bugs/`, or `TODO.md` — they predate substrate adoption
 and have decades of muscle memory. `imp tidy` may *scan* them to
-propose stash items (the migrate spec already does this for legacy
+propose note items (the migrate spec already does this for legacy
 ingest), but the dirs themselves stay informal.
 
 `rules/` is the exception: humans author directly, gnome reads
@@ -298,7 +298,7 @@ body.
   ripgrep filters work reliably.
 - Symbol-alias generation in `_index/by-symbol/` — what aliases get
   generated, and how (heuristic vs. configured).
-- Slash-command surface (`/stash` etc.) — separate from CLI, not
+- Slash-command surface (`/note` etc.) — separate from CLI, not
   yet sketched.
 - Whether `<repo>.project-proposals/` follows the `project/` →
   `imp/` rename to `<repo>.imp-proposals/`. Affects the
