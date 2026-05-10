@@ -40,6 +40,30 @@ Open question: whether `<repo>.project-proposals/` follows to
 `<repo>.imp-proposals/` — affects the `project-promote` skill and
 existing docs.
 
+## [2026-05-10] init | scaffolding rewritten for new layout
+
+`imp init` now produces the new layered substrate by default. Default
+location: `imp/` (was `project/`). Templates restructured:
+
+- Added: `note/{inbox,processed,discarded}/`,
+  `_index/{by-file,by-symbol,by-feature}/`.
+- Removed: `aspirations/`, `tasks/`, `plans/active|archive/`, `rules/`
+  (the last three lifted to repo root, `aspirations`/`tasks` dropped
+  outright).
+- Rewrote: `_meta/conventions.md` (kinds taxonomy, trust model,
+  drift semantics, ~200→160 lines), top-level `README.md`, `log.md`
+  init message, kind-folder READMEs (concepts/learnings/reference)
+  for the new authoring story (gnome generates from notes).
+
+`imp init` now also scaffolds root-level human-owned dirs (`plans/`,
+`bugs/`, `rules/`) with `.gitkeep`s and creates `TODO.md` if missing.
+Never overwrites existing root content. Adds `.imp/` (layer-0 cache)
+to `.gitignore` alongside the proposals path.
+
+Smoke test green: fresh `git init` + `imp init` produces complete
+new-layout tree; re-run is a no-op without `--force`; `imp note`
+lands captures correctly in `imp/note/inbox/`.
+
 ## [2026-05-10] design | trust model partitioned by directory ownership
 
 Pre-rename: every imp write went through proposals (humans approved

@@ -103,12 +103,15 @@ Lifecycle:
                                      The canonical "what to do after a build" command.
 
 Substrate:
-  init [path] [--force]              Scaffold the project-substrate layout
-                                     (rules / aspirations / learnings / plans /
-                                     tasks / concepts) at <path> (default: project/).
-                                     Refuses if non-substrate content already
-                                     exists; --force regenerates skill-owned
-                                     files on re-init.
+  init [path] [--force]              Scaffold the substrate layout into the
+                                     current git repo. Default location is
+                                     `imp/` (gnome-maintained content:
+                                     learnings, reference, concepts, _index,
+                                     note, log). Also scaffolds root-level
+                                     human-owned plans/, bugs/, rules/, and
+                                     TODO.md if missing — never overwrites
+                                     existing root content. --force regenerates
+                                     skill-owned files on re-init.
   signals <doc> [--json]             Gather per-doc signals for migration
                                      classification: git dates, structure,
                                      self-labels, cross-refs, code-reference

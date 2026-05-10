@@ -2,10 +2,13 @@ using System.Diagnostics;
 
 namespace Imp.Substrate;
 
-// `imp init [path] [--force]` — scaffolds the project-substrate layout
-// (rules / aspirations / learnings / plans / tasks / concepts) into the
-// current git repo. Templates live next to the imp DLL at runtime
-// (Substrate/Templates/), copied via the csproj <None Update> entry.
+// `imp init [path] [--force]` — scaffolds the substrate layout into
+// the current git repo. Default location is `imp/` (gnome-maintained
+// substrate). Also scaffolds root-level human-owned dirs: `plans/`,
+// `bugs/`, `rules/`, and `TODO.md` if missing.
+//
+// Templates live next to the imp DLL at runtime (Substrate/Templates/),
+// copied via the csproj <None Update> entry.
 //
 // Substitutions at copy time:
 //   {{REPO}}      → repo basename (e.g. "nb")
@@ -13,7 +16,8 @@ namespace Imp.Substrate;
 //
 // Refuses if non-substrate content already exists at the target. Treats
 // existing _meta/conventions.md as a re-init (no-op without --force,
-// regenerate skill-owned files with --force).
+// regenerate skill-owned files with --force). Root-level dirs and
+// TODO.md are never overwritten — created only if missing.
 public static class ProjectInit
 {
     const string ConventionsRelPath = "_meta/conventions.md";
@@ -22,7 +26,7 @@ public static class ProjectInit
     public static int Run(string[] args)
     {
         // Parse args
-        string location = "project";
+        string location = "imp";
         bool force = false;
         foreach (var arg in args)
         {
@@ -73,7 +77,7 @@ public static class ProjectInit
             {
                 Console.Error.WriteLine($"imp init: {RelativeTo(repoRoot, substrateDir)}/ exists with non-substrate content.");
                 Console.Error.WriteLine("Run /project-migrate (planned) to ingest legacy docs, or pick a different location:");
-                Console.Error.WriteLine($"  imp init project-new/");
+                Console.Error.WriteLine($"  imp init imp-new/");
                 return 1;
             }
         }
@@ -96,30 +100,44 @@ public static class ProjectInit
             ["{{INIT_DATE}}"] = today,
         };
 
-        // Copy templates
+        // Copy templates (substrate dir)
         var written = CopyTreeWithSubstitution(templatesRoot, substrateDir, substitutions, overwrite: force);
+
+        // Scaffold root-level human-owned dirs (only if missing)
+        var rootScaffold = ScaffoldRootDirs(repoRoot);
 
         // CLAUDE.md upsert
         var claudeMdPath = Path.Combine(repoRoot, "CLAUDE.md");
         var claudeAction = UpsertClaudeMdSection(claudeMdPath, location, repoName);
 
-        // .gitignore upsert
+        // .gitignore upsert (proposals + .imp/ cache)
         var gitignorePath = Path.Combine(repoRoot, ".gitignore");
-        var gitignoreLine = $"{repoName}.imp-proposals/";
-        var gitignoreAction = UpsertGitignoreLine(gitignorePath, gitignoreLine);
+        var gitignoreLines = new[]
+        {
+            $"{repoName}.imp-proposals/",
+            ".imp/",
+        };
+        var gitignoreAction = UpsertGitignoreLines(gitignorePath, gitignoreLines);
 
         // Summary
         Console.WriteLine($"imp init: substrate scaffolded at {RelativeTo(repoRoot, substrateDir)}/");
         Console.WriteLine($"  Files written: {written}");
+        if (rootScaffold.Count > 0)
+        {
+            Console.WriteLine($"  Root scaffolded: {string.Join(", ", rootScaffold)}");
+        }
         Console.WriteLine($"  CLAUDE.md: {claudeAction}");
         Console.WriteLine($"  .gitignore: {gitignoreAction}");
         Console.WriteLine();
-        Console.WriteLine("Layout: rules/ aspirations/ learnings/ plans/{active,archive}/ tasks/ concepts/ reference/ + log.md, _meta/conventions.md");
+        Console.WriteLine($"Layout (under {RelativeTo(repoRoot, substrateDir)}/, gnome-maintained):");
+        Console.WriteLine("  learnings/ reference/ concepts/ _index/ note/ log.md _meta/");
+        Console.WriteLine("Layout (repo root, human-owned):");
+        Console.WriteLine("  plans/ bugs/ rules/ TODO.md");
         Console.WriteLine();
         Console.WriteLine("Next:");
-        Console.WriteLine($"  - Read {RelativeTo(repoRoot, substrateDir)}/_meta/conventions.md for the spec.");
-        Console.WriteLine($"  - When new work starts, drop a plan in {RelativeTo(repoRoot, substrateDir)}/plans/active/<slug>.md (state: exploring).");
-        Console.WriteLine($"  - imp proposals will land at ../{repoName}.imp-proposals/ (sidecar of repo root, gitignored).");
+        Console.WriteLine($"  - Read {RelativeTo(repoRoot, substrateDir)}/_meta/conventions.md for the shape.");
+        Console.WriteLine($"  - Drop a capture: imp note \"<text>\" — the gnome processes it on `imp tidy`.");
+        Console.WriteLine($"  - imp proposals (cross-boundary changes only) land at ../{repoName}.imp-proposals/.");
 
         return 0;
     }
@@ -128,10 +146,12 @@ public static class ProjectInit
     {
         Console.WriteLine("usage: imp init [path] [--force]");
         Console.WriteLine();
-        Console.WriteLine("  path     substrate location relative to repo root (default: project)");
+        Console.WriteLine("  path     substrate location relative to repo root (default: imp)");
         Console.WriteLine("  --force  regenerate skill-owned files (READMEs, conventions.md) on re-init");
         Console.WriteLine();
         Console.WriteLine("Refuses if path exists with non-substrate content.");
+        Console.WriteLine("Also scaffolds root-level human-owned dirs (plans/, bugs/, rules/) and TODO.md");
+        Console.WriteLine("if missing — never overwrites existing root content.");
     }
 
     static string? GitRepoRoot()
@@ -206,7 +226,41 @@ public static class ProjectInit
             }
         }
 
+        // If this directory ended up empty (e.g. note/inbox/, _index/by-file/),
+        // drop a .gitkeep so git tracks it. Idempotent — won't add a duplicate.
+        if (!Directory.EnumerateFileSystemEntries(dstDir).Any())
+        {
+            File.WriteAllText(Path.Combine(dstDir, ".gitkeep"), "");
+            written++;
+        }
+
         return written;
+    }
+
+    // Creates root-level human-owned dirs and TODO.md if missing. Never
+    // overwrites existing content. Returns list of created entries for
+    // the summary.
+    static List<string> ScaffoldRootDirs(string repoRoot)
+    {
+        var created = new List<string>();
+
+        foreach (var dirName in new[] { "plans", "bugs", "rules" })
+        {
+            var path = Path.Combine(repoRoot, dirName);
+            if (Directory.Exists(path)) continue;
+            Directory.CreateDirectory(path);
+            File.WriteAllText(Path.Combine(path, ".gitkeep"), "");
+            created.Add($"{dirName}/");
+        }
+
+        var todoPath = Path.Combine(repoRoot, "TODO.md");
+        if (!File.Exists(todoPath))
+        {
+            File.WriteAllText(todoPath, "# TODO\n\n<!-- running list of work to do; substrate-aware -->\n");
+            created.Add("TODO.md");
+        }
+
+        return created;
     }
 
     static string UpsertClaudeMdSection(string claudeMdPath, string location, string repoName)
@@ -236,67 +290,81 @@ public static class ProjectInit
         return $"""
             {ClaudeMdHeading}
 
-            This repo uses a structured project-knowledge substrate at `{location}/`.
-            Read from it before answering questions about design, intent, or
-            current behavior. You may edit substrate files directly when
-            capturing decisions, learnings, or plans. imp may not — it produces
-            proposals you (or the human) review and approve.
+            This repo uses a structured project-knowledge substrate split between
+            `{location}/` (gnome-maintained) and root-level human-owned dirs.
+            Read substrate content before answering questions about design,
+            intent, or current behavior.
 
             ### What's where
 
-            - **`{location}/concepts/<topic>.md`** — auto-generated synthesis
-              pages. Start here for a topic overview. Don't hand-edit;
-              regenerated by `/project-sync`.
-            - **`{location}/rules/`** — locked-in constraints. Code violating
-              these is a bug. Internal contradictions are alarming.
-            - **`{location}/aspirations/`** — what we're going for. Contradictions
-              are fine; code falls short by definition.
-            - **`{location}/learnings/`** — discovered knowledge. Decays in
-              relevance, not in truth.
-            - **`{location}/plans/active/`** — primary working area. Most new work
-              starts here as a plan in `state: exploring`. A plan may have an
-              optional companion directory `<slug>/` for prototypes/scratch.
-            - **`{location}/plans/archive/`** — concluded plans (shipped, shelved,
-              abandoned).
-            - **`{location}/tasks/`** — task tracking.
-            - **`{location}/log.md`** — append-only chronological history.
+            **`{location}/` — gnome territory** (imp writes directly under
+            `imp-gnome <noreply@imp.local>`):
+
+            - **`{location}/concepts/<topic>.md`** — auto-generated narrative
+              synthesis pages. Don't hand-edit; regenerated by `imp tidy`.
+            - **`{location}/_index/`** — per-file/symbol/feature lookup pages.
+              Read `{location}/_index/by-file/<path>.md` before editing a
+              source file for a digest of what to know first.
+            - **`{location}/learnings/`** — discovered knowledge, why-decisions,
+              gotchas. Authored by the gnome from notes.
+            - **`{location}/reference/`** — archived external sources (URLs +
+              local snippets). Authored by the gnome from notes.
+            - **`{location}/note/inbox/`** — write target for `imp note`. The
+              gnome processes captures here into structured entries on
+              `imp tidy`.
+            - **`{location}/log.md`** — append-only history.
+
+            **Repo root — human territory:**
+
+            - **`plans/`** — design intent, specs, in-flight work. Most new
+              work starts as a plan in `state: exploring`.
+            - **`bugs/`** — bug reports.
+            - **`TODO.md`** — running list.
+            - **`rules/`** — hard project invariants. Substrate-shaped
+              (frontmatter, drift tracking) but human-authored.
 
             For drift semantics per kind, see `{location}/_meta/conventions.md`.
 
             ### imp proposals
 
-            imp produces proposals at `{repoName}.imp-proposals/P-NNN-<slug>.md`
-            when scheduled sweeps detect promotion candidates, drift, doc rot,
-            etc. Auto-approval gradient when reviewing on the user's behalf:
+            Imp writes its own dir directly. For changes touching root-level
+            human dirs (`rules/`, `plans/`, `bugs/`, `TODO.md`), imp produces
+            proposals at `{repoName}.imp-proposals/P-NNN-<slug>.md`. Review
+            and apply via `/imp-promote`. Auto-approval gradient when Claude
+            reviews on the user's behalf:
 
-            - **Always-safe** (auto-apply): `log.md` appends, archive moves.
-            - **Claude-approvable**: new learning entries, concept regeneration,
-              candidate flags.
-            - **Human-required**: rules edits, deletions, supersede markers,
-              anything that loses information.
+            - **Always-safe** (auto-apply): `TODO.md` appends.
+            - **Claude-approvable**: plan edits and state-flips, new
+              exploring plans.
+            - **Human-required**: any change to `rules/`, deletions, anything
+              that loses information.
             """;
     }
 
-    static string UpsertGitignoreLine(string gitignorePath, string line)
+    static string UpsertGitignoreLines(string gitignorePath, IReadOnlyList<string> linesToAdd)
     {
-        if (File.Exists(gitignorePath))
+        var preexisting = File.Exists(gitignorePath);
+        var existing = preexisting ? File.ReadAllText(gitignorePath) : "";
+        var existingLines = existing.Split('\n').Select(l => l.TrimEnd('\r')).ToHashSet();
+
+        var added = new List<string>();
+        foreach (var line in linesToAdd)
         {
-            var existing = File.ReadAllText(gitignorePath);
-            // exact-line match (avoid mis-matching a substring)
-            var lines = existing.Split('\n').Select(l => l.TrimEnd('\r'));
-            if (lines.Any(l => l == line))
+            if (!existingLines.Contains(line))
             {
-                return "line already present (no-op)";
+                added.Add(line);
+                existingLines.Add(line);
             }
-            var separator = existing.EndsWith('\n') ? "" : "\n";
-            File.WriteAllText(gitignorePath, existing + separator + line + "\n");
-            return "appended proposals path";
         }
-        else
-        {
-            File.WriteAllText(gitignorePath, line + "\n");
-            return "created with proposals path";
-        }
+
+        if (added.Count == 0) return "lines already present (no-op)";
+
+        var separator = existing.Length == 0 || existing.EndsWith('\n') ? "" : "\n";
+        var appended = string.Join("\n", added) + "\n";
+        File.WriteAllText(gitignorePath, existing + separator + appended);
+        return preexisting
+            ? $"appended: {string.Join(", ", added)}"
+            : $"created with: {string.Join(", ", added)}";
     }
 
     static string RelativeTo(string baseDir, string fullPath)
