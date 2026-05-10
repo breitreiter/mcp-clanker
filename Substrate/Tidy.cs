@@ -200,12 +200,17 @@ public static class Tidy
         [property: JsonPropertyName("title")] string Title,
         [property: JsonPropertyName("rationale")] string Rationale,
         [property: JsonPropertyName("touches")] TriageTouches Touches,
+        [property: JsonPropertyName("reference_fields")] ReferenceFields? ReferenceFields,
         [property: JsonPropertyName("discard_reason")] string? DiscardReason);
 
     sealed record TriageTouches(
         [property: JsonPropertyName("files")] List<string> Files,
         [property: JsonPropertyName("symbols")] List<string> Symbols,
         [property: JsonPropertyName("features")] List<string> Features);
+
+    sealed record ReferenceFields(
+        [property: JsonPropertyName("url")] string Url,
+        [property: JsonPropertyName("subject")] string Subject);
 
     static async Task<TriageResult?> TriageAsync(IChatClient chat, string systemPrompt, string body, IReadOnlyDictionary<string, string> noteMeta)
     {
@@ -281,7 +286,7 @@ public static class Tidy
 
     // ── phase 4: draft ────────────────────────────────────────────
 
-    static async Task<string?> DraftEntryAsync(IChatClient chat, string systemPrompt, string body, IReadOnlyDictionary<string, string> noteMeta, TriageResult triage)
+    static async Task<string?> DraftBodyAsync(IChatClient chat, string systemPrompt, string body, IReadOnlyDictionary<string, string> noteMeta, TriageResult triage)
     {
         var user = BuildDraftUserMessage(body, noteMeta, triage);
         var messages = new List<ChatMessage>
@@ -324,13 +329,17 @@ public static class Tidy
         string body, IReadOnlyDictionary<string, string> frontmatter,
         TriageResult triage, bool dryRun, RunStats stats)
     {
-        var entry = await DraftEntryAsync(chat, draftPrompt, body, frontmatter, triage);
-        if (string.IsNullOrWhiteSpace(entry))
+        var bodyMarkdown = await DraftBodyAsync(chat, draftPrompt, body, frontmatter, triage);
+        if (string.IsNullOrWhiteSpace(bodyMarkdown))
         {
             Console.WriteLine($"      draft failed → leaving in inbox");
             stats.Failed++;
             return;
         }
+        // Defensive: if the model emitted a frontmatter block despite the
+        // prompt's instruction not to, strip it. The orchestrator owns
+        // frontmatter; double frontmatter is invalid.
+        bodyMarkdown = StripLeadingFrontmatter(bodyMarkdown).TrimStart('\r', '\n');
 
         var subdir = triage.Classification == "learning" ? "learnings" : "reference";
         var slug = SlugifyTitle(triage.Title);
@@ -338,15 +347,70 @@ public static class Tidy
         var entryDir = Path.Combine(substrateDir, subdir);
         var (filename, fullPath) = ResolveEntryPath(entryDir, today, slug);
 
+        var sourceNoteId = Path.GetFileNameWithoutExtension(noteName);
+        var fm = BuildFrontmatter(triage, today, sourceNoteId);
+        var entry = $"---\n{fm}---\n\n{bodyMarkdown}";
+        if (!entry.EndsWith('\n')) entry += "\n";
+
         Console.WriteLine($"      → {Path.Combine(subdir, filename).Replace('\\', '/')}");
         if (dryRun) { stats.Drafted++; return; }
 
         Directory.CreateDirectory(entryDir);
-        await File.WriteAllTextAsync(fullPath, entry.EndsWith('\n') ? entry : entry + "\n");
+        await File.WriteAllTextAsync(fullPath, entry);
         MoveTo(notePath, Path.Combine(substrateDir, "note", "processed"));
 
         if (triage.Classification == "learning") stats.Learnings++;
         else stats.References++;
+    }
+
+    // Builds the YAML frontmatter block for an entry. Code owns this — the
+    // model owns body only. Canonical line format (one field per line).
+    static string BuildFrontmatter(TriageResult triage, string todayUtc, string sourceNoteId)
+    {
+        var sb = new StringBuilder();
+        sb.Append($"kind: {triage.Classification}\n");
+        sb.Append($"title: {triage.Title}\n");
+        sb.Append($"created: {todayUtc}\n");
+        sb.Append($"updated: {todayUtc}\n");
+        sb.Append($"status: current\n");
+
+        sb.Append("touches:\n");
+        sb.Append($"  files: [{FormatYamlList(triage.Touches?.Files)}]\n");
+        sb.Append($"  symbols: [{FormatYamlList(triage.Touches?.Symbols)}]\n");
+        sb.Append($"  features: [{FormatYamlList(triage.Touches?.Features)}]\n");
+
+        sb.Append("provenance:\n");
+        sb.Append($"  author: imp-gnome\n");
+        sb.Append($"  origin: note:{sourceNoteId}\n");
+
+        if (triage.Classification == "reference" && triage.ReferenceFields is { } rf)
+        {
+            // Bare strings without surrounding quotes work for typical URLs and
+            // short subject lines. If we hit YAML-special chars in the future
+            // (`:`, `#`, leading `-`), revisit and quote.
+            sb.Append($"url: {rf.Url}\n");
+            sb.Append($"subject: {rf.Subject}\n");
+        }
+
+        return sb.ToString();
+    }
+
+    static string FormatYamlList(IReadOnlyList<string>? items)
+    {
+        if (items is null || items.Count == 0) return "";
+        return string.Join(", ", items);
+    }
+
+    // Removes a leading YAML frontmatter block from text, defensively, if the
+    // model emitted one despite the prompt's instruction.
+    static string StripLeadingFrontmatter(string text)
+    {
+        if (!text.StartsWith("---\n", StringComparison.Ordinal) && !text.StartsWith("---\r\n", StringComparison.Ordinal))
+            return text;
+        var rest = text.AsSpan(text.IndexOf('\n') + 1);
+        var endIdx = rest.IndexOf("\n---", StringComparison.Ordinal);
+        if (endIdx < 0) return text;
+        return rest[(endIdx + 4)..].ToString();
     }
 
     static (string Filename, string FullPath) ResolveEntryPath(string entryDir, string date, string slug)
@@ -500,7 +564,7 @@ public static class Tidy
         public bool AnyChanges => Learnings > 0 || References > 0 || Deferred > 0 || Discarded > 0;
 
         public string Summary() =>
-            $"{Total} note(s): {Learnings + Drafted} entry(s), {Deferred} deferred, {Discarded} discarded, {Failed} failed";
+            $"{Total} note(s): {Learnings + References + Drafted} entry(s), {Deferred} deferred, {Discarded} discarded, {Failed} failed";
     }
 
     // ── usage ─────────────────────────────────────────────────────

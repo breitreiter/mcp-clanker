@@ -11,20 +11,44 @@ Return a single JSON object. No prose, no markdown fences. Schema:
 ```
 {
   "classification": "learning" | "reference" | "rule-suggestion" | "plan-suggestion" | "noise",
-  "title": "<short human-readable title, ≤ 60 chars>",
-  "rationale": "<one sentence on why this classification>",
+  "title":          "<short human-readable title, ≤ 60 chars>",
+  "rationale":      "<one sentence on why this classification>",
   "touches": {
-    "files":    ["<path/to/file>", ...],
-    "symbols":  ["<SymbolName>", ...],
-    "features": ["<feature-tag>", ...]
+    "files":    ["<exact path as written in the note>", ...],
+    "symbols":  ["<exact symbol name as written in the note>", ...],
+    "features": ["<short kebab-case theme tag>", ...]
   },
-  "discard_reason": "<short reason; only present if classification is 'noise'>"
+  "reference_fields": {        // ONLY if classification == "reference"
+    "url":     "<the URL from the note body>",
+    "subject": "<one phrase: what the external source IS>"
+  },
+  "discard_reason": "<short reason; ONLY if classification == 'noise'>"
 }
 ```
 
-Empty arrays in `touches` are fine. Don't invent file paths or symbols
-the note doesn't actually mention. Feature tags should be short,
-kebab-case, drawn from the note's own vocabulary.
+## Path discipline (important — first run failed this)
+
+**Copy file paths verbatim from the note. Do not normalize, prefix,
+fix, or guess.**
+
+If the note says `Foo.cs`, output `["Foo.cs"]`. NOT `["src/Foo.cs"]`,
+NOT `["./Foo.cs"]`, NOT `["repo/Foo.cs"]`. The note is the canonical
+record of what was claimed; we don't have repo structure context here
+and assumptions are wrong more often than right.
+
+Same rule for symbols. If the note says `ConversationManager`, output
+`["ConversationManager"]`. Don't add namespaces, don't expand to
+fully-qualified names.
+
+If you're not sure whether something is a file/symbol or just an
+incidental word, **leave it out**. Empty arrays are correct answers,
+not failure modes. The next phase will work fine with empty `touches`.
+
+Features are different — they're free-form theme tags. You can pick
+short kebab-case labels that summarize the topics the note touches,
+even if the note doesn't use those exact tags. (E.g., a note about
+streaming buffers can have `features: ["streaming"]` even if the word
+"streaming" appears differently in the body.)
 
 ## Classifications
 
@@ -36,17 +60,15 @@ Survives refactor; rationale that code alone can't carry. Lives at
 **reference** — A pointer to an external source (paper, blog post,
 docs, third-party tool) that influenced this project. Usually
 recognizable by an inline URL plus a sentence about what it
-contributed. Lives at `imp/reference/`.
+contributed. Lives at `imp/reference/`. Required: extract `url` and
+`subject` into `reference_fields`.
 
 **rule-suggestion** — A proposed *invariant* for the project: "X must
 always Y," "Z must never W," design constraints, format requirements.
-Distinct from a learning by being prescriptive, not descriptive. The
-human owns `rules/`, so this becomes a proposal for review (handled
-in a later phase, not yours).
+Distinct from a learning by being prescriptive, not descriptive.
 
 **plan-suggestion** — A proposed *new piece of work* or substantive
-edit to an existing plan. The human owns `plans/`, so this also
-becomes a proposal (later phase).
+edit to an existing plan.
 
 **noise** — Apply if any of these are true:
 - The note's content would be better as a code comment (the "i++ //
@@ -70,32 +92,80 @@ an internal observation about this project? Learning.
 
 Note: `qwen3-coder hallucinates imp's API on real repos. Routing to
 research-only; codex-mini stays the build executor.`
-→ `learning` — internal observation about model fitness, why-decision.
-Touches: features ["build-executor", "research-mode"].
+
+```json
+{
+  "classification": "learning",
+  "title": "qwen3-coder unsuitable as build executor",
+  "rationale": "internal observation about model fitness on this codebase",
+  "touches": {
+    "files": [],
+    "symbols": [],
+    "features": ["build-executor", "research-mode"]
+  }
+}
+```
+
+(Note no files/symbols — none were named.)
+
+Note: `ConversationManager.cs is too big to split piecewise; broke
+issue #47 in April when streaming buffer got held mid-tool-merge.`
+
+```json
+{
+  "classification": "learning",
+  "title": "ConversationManager not piecewise-splittable",
+  "rationale": "post-incident reasoning about coupling between streaming and tool-merge",
+  "touches": {
+    "files": ["ConversationManager.cs"],
+    "symbols": ["ConversationManager"],
+    "features": ["streaming", "tool-call-merging"]
+  }
+}
+```
+
+(Note: file is `ConversationManager.cs` exactly as written. NOT
+`src/ConversationManager.cs`, NOT `nb/ConversationManager.cs`.)
 
 Note: `salience model in storylet engine is from Emily Short:
-https://emshort.blog/2016/04/12/standard-patterns-in-choice-based-games/
-the author-time vs runtime distinction is the load-bearing idea.`
-→ `reference` — external source with attribution and influence.
-Touches: features ["storylet-engine"].
+https://emshort.blog/2016/04/12/standard-patterns-in-choice-based-games/`
 
-Note: `verified-against frontmatter must always cite at least one
-{file, hash, lines} tuple — entries without it can't drift-detect.`
-→ `rule-suggestion` — prescriptive invariant.
-
-Note: `add support for streaming output — would unblock the GPT5
-truncation issue and feels overdue.`
-→ `plan-suggestion` — proposed new work.
+```json
+{
+  "classification": "reference",
+  "title": "Emily Short on storylet salience",
+  "rationale": "external URL with attribution",
+  "touches": {
+    "files": [],
+    "symbols": ["StoryletEngine"],
+    "features": ["storylet-engine", "salience"]
+  },
+  "reference_fields": {
+    "url": "https://emshort.blog/2016/04/12/standard-patterns-in-choice-based-games/",
+    "subject": "Standard patterns in choice-based games"
+  }
+}
+```
 
 Note: `i++ increments i by 1.`
-→ `noise` — could be a comment; reconstructable from HEAD.
-discard_reason: "structural triviality, reconstructable from code."
+
+```json
+{
+  "classification": "noise",
+  "title": "(noise)",
+  "rationale": "structural triviality, reconstructable from code",
+  "touches": { "files": [], "symbols": [], "features": [] },
+  "discard_reason": "structural-triviality"
+}
+```
 
 ## Constraints
 
-- Output ONLY the JSON object. No surrounding prose.
+- Output ONLY the JSON object. No surrounding prose, no markdown
+  fences.
 - Keep `rationale` to one sentence.
-- `title` is for the eventual entry filename slug — be concise.
-- If `classification` is `noise`, leave `touches` empty and include
-  `discard_reason`.
-- If `classification` is anything else, do NOT include `discard_reason`.
+- `title` becomes the entry filename slug — keep it concise.
+- Include `reference_fields` ONLY for `reference` classification.
+- Include `discard_reason` ONLY for `noise` classification.
+- Path discipline (above) is the most common failure mode — re-read
+  it before you output.
