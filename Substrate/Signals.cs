@@ -201,8 +201,17 @@ public static class Signals
     static SelfLabelsInfo ExtractSelfLabels(string content)
     {
         var hasFrontmatter = content.StartsWith("---\n") || content.StartsWith("---\r\n");
-        var statusMatch = Regex.Match(content, @"(?m)^\s*Status\s*:\s*(.+?)\s*$", RegexOptions.IgnoreCase);
-        var statusLine = statusMatch.Success ? statusMatch.Groups[1].Value.Trim() : null;
+
+        // Strip markdown emphasis markers per line before matching, so
+        // "**Status:** Implemented" matches the same as "Status: Implemented".
+        string? statusLine = null;
+        foreach (var raw in content.Split('\n'))
+        {
+            var line = Regex.Replace(raw, @"[*_]", "");
+            var m = Regex.Match(line, @"^\s*Status\s*:\s*(.+?)\s*$", RegexOptions.IgnoreCase);
+            if (m.Success) { statusLine = m.Groups[1].Value.Trim(); break; }
+        }
+
         var decidedCount = Regex.Matches(content, @"\bDECIDED\b").Count;
         return new SelfLabelsInfo(hasFrontmatter, statusLine, decidedCount);
     }
@@ -242,23 +251,52 @@ public static class Signals
 
     static CodeRefsInfo ExtractCodeRefs(string content, string repoRoot)
     {
-        // Extract PascalCase candidate identifiers from prose, excluding code blocks
-        // (code blocks contain too much noise — types, libraries, etc.).
+        // Two passes against the doc for "code thing" signals.
+        //
+        // TODO: replace both with AST-driven extraction once that work
+        // lands. Both passes here are heuristic stopgaps:
+        //
+        //   1. PascalCase identifiers in prose — too narrow (drops
+        //      single-word names like Shell), strips fenced blocks
+        //      (loses filename references), and the CommonWords skip
+        //      list is hand-curated and fragile.
+        //   2. Filenames in the full doc body — vague proxy for "this
+        //      doc references a code thing". Catches things the
+        //      PascalCase pass misses (e.g. "Shell/BashTool.cs"
+        //      anywhere in the doc), but doesn't distinguish e.g. an
+        //      old code path mention from a current one. Whole-file
+        //      list comes from `git ls-files` (basenames only).
+
         var prose = StripFencedBlocks(content);
 
-        // PascalCase: capital letter followed by at least one lowercase, then optional more (UpperCamelCase).
-        // Also include all-caps multi-word like SQL or HTTP — but keep conservative for now.
+        // Pass 1: PascalCase from prose.
         var candidates = new HashSet<string>(StringComparer.Ordinal);
         foreach (Match m in Regex.Matches(prose, @"\b[A-Z][a-z]+(?:[A-Z][a-z]+)+\b"))
         {
             var t = m.Value;
-            if (t.Length < 5) continue;                  // skip noise like "Tobi"
-            if (CommonWords.Contains(t)) continue;       // skip "Project", "Configuration", etc.
+            if (t.Length < 5) continue;
+            if (CommonWords.Contains(t)) continue;
             candidates.Add(t);
         }
 
+        // Pass 2: filenames anywhere in the full doc body.
+        var fileExtensions = new[] { "cs", "ts", "tsx", "js", "jsx", "py", "go", "rs", "java", "yaml", "yml", "json", "toml", "csproj", "html" };
+        var extPattern = string.Join("|", fileExtensions);
+        var filenameCandidates = new HashSet<string>(StringComparer.Ordinal);
+        foreach (Match m in Regex.Matches(content, $@"\b[\w-]+\.(?:{extPattern})\b"))
+        {
+            filenameCandidates.Add(m.Value);
+        }
+
+        // Resolve filenames against the actual filesystem (basename match).
+        // Walks the repo, skipping common build / vcs dirs, so gitignored
+        // but present files (fake-tools.yaml, .nb_conversation_history.json)
+        // count as live rather than absent.
+        var trackedBasenames = CollectRepoBasenames(repoRoot);
+
         var live = new List<string>();
         var absent = new List<string>();
+
         foreach (var term in candidates.OrderBy(s => s, StringComparer.Ordinal))
         {
             var (ok, stdout) = RunGit(repoRoot, "grep", "-l", "-w", "-F", term, "--",
@@ -267,13 +305,51 @@ public static class Signals
             else absent.Add(term);
         }
 
+        foreach (var fname in filenameCandidates.OrderBy(s => s, StringComparer.Ordinal))
+        {
+            if (trackedBasenames.Contains(fname)) live.Add(fname);
+            else absent.Add(fname);
+        }
+
         return new CodeRefsInfo(
-            CandidatesExtracted: candidates.Count,
+            CandidatesExtracted: candidates.Count + filenameCandidates.Count,
             LiveCount: live.Count,
             AbsentCount: absent.Count,
             LiveSample: live.Take(20).ToList(),
             AbsentSample: absent.Take(20).ToList()
         );
+    }
+
+    static HashSet<string> CollectRepoBasenames(string repoRoot)
+    {
+        var skip = new HashSet<string>(StringComparer.Ordinal)
+        {
+            ".git", ".imp", "bin", "obj", "node_modules", ".idea", ".vs", ".vscode", ".next", "dist", "target",
+        };
+        var basenames = new HashSet<string>(StringComparer.Ordinal);
+        WalkInto(repoRoot, basenames, skip);
+        return basenames;
+    }
+
+    static void WalkInto(string dir, HashSet<string> sink, HashSet<string> skipDirNames)
+    {
+        IEnumerable<string> entries;
+        try { entries = Directory.EnumerateFileSystemEntries(dir); }
+        catch { return; }
+
+        foreach (var entry in entries)
+        {
+            var name = Path.GetFileName(entry);
+            if (Directory.Exists(entry))
+            {
+                if (skipDirNames.Contains(name)) continue;
+                WalkInto(entry, sink, skipDirNames);
+            }
+            else
+            {
+                sink.Add(name);
+            }
+        }
     }
 
     static string StripFencedBlocks(string content)
