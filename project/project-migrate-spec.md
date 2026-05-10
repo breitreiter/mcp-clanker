@@ -125,11 +125,25 @@ when compared.
 Phase 1.5 groups docs by topic so Phase 2's classifier sees
 candidates *together*:
 
-1. **Embed each doc.** Use a sentence-embedding API
-   (`text-embedding-3-small` or equivalent) to produce a vector per
-   doc. ~150 docs × ~5K tokens ≈ 750K tokens; trivial cost.
+1. **Embed each doc.** Use a sentence-embedding model to produce a
+   vector per doc. ~150 docs × ~5K tokens ≈ 750K tokens; trivial.
    Cache vectors in `_migration/M-NNN/embeddings.json` so resumes
    skip re-embedding.
+
+   Two model paths:
+   - **Cloud API** (`text-embedding-3-small` or equivalent): trivial
+     to integrate, ~$0.015 for 150 docs at our rate.
+   - **Local `qwen3-embedding`**: well-regarded as of mid-2026, runs
+     on Strix Halo. Operational note: if we switch the local
+     research executor from `qwen3-coder` to general-purpose
+     `qwen3-32B`, both models can run concurrently on the box —
+     research workloads and embedding workloads in parallel during
+     idle hours. That makes local embeddings free real estate
+     (no API cost, no API rate limits, and consistent with the
+     existing local-Qwen story for narrow tasks).
+
+   Either is fine for v0.1 of migrate; choice probably depends on
+   whether the local-32B switch lands first.
 2. **Pairwise cosine similarity.** Naive in-memory; no vector DB
    needed at this scale.
 3. **Cluster.** Threshold-based grouping (e.g. similarity > 0.6
