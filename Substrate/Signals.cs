@@ -13,8 +13,27 @@ namespace Imp.Substrate;
 // Pure mechanical pass. No model calls. Intended as the cheap-phase
 // primitive that /project-migrate consumes per-doc to inform
 // classification.
+//
+// `Gather` is the public entry point used both by the CLI handler here
+// and by `imp migrate` (Substrate/Migrate.cs).
 public static class Signals
 {
+    // Pure function from (repo, relpath, content) to a SignalsReport.
+    // No I/O beyond what the existing helpers do (git, grep, repo walk).
+    public static SignalsReport Gather(string repoRoot, string relPath, string content) =>
+        new(
+            Doc: relPath,
+            Bytes: content.Length,
+            Lines: content.Count(c => c == '\n') + 1,
+            Git: GitSignals(repoRoot, relPath),
+            Structure: ExtractStructure(content),
+            SelfLabels: ExtractSelfLabels(content),
+            CrossRefs: ExtractCrossRefs(content, repoRoot, relPath),
+            CodeRefs: ExtractCodeRefs(content, repoRoot)
+        );
+
+    public static string? ResolveRepoRoot(string startDir) => GitRepoRoot(startDir);
+
     public static int Run(string[] args)
     {
         bool json = false;
@@ -42,16 +61,7 @@ public static class Signals
         var relPath = Path.GetRelativePath(repoRoot, fullPath).Replace(Path.DirectorySeparatorChar, '/');
         var content = File.ReadAllText(fullPath);
 
-        var report = new SignalsReport(
-            Doc: relPath,
-            Bytes: content.Length,
-            Lines: content.Count(c => c == '\n') + 1,
-            Git: GitSignals(repoRoot, relPath),
-            Structure: ExtractStructure(content),
-            SelfLabels: ExtractSelfLabels(content),
-            CrossRefs: ExtractCrossRefs(content, repoRoot, relPath),
-            CodeRefs: ExtractCodeRefs(content, repoRoot)
-        );
+        var report = Gather(repoRoot, relPath, content);
 
         if (json)
         {
@@ -384,7 +394,7 @@ public static class Signals
 
 // ── records ────────────────────────────────────────────────
 
-record SignalsReport(
+public record SignalsReport(
     string Doc,
     int Bytes,
     int Lines,
@@ -395,13 +405,13 @@ record SignalsReport(
     CodeRefsInfo CodeRefs
 );
 
-record GitInfo(
+public record GitInfo(
     [property: JsonPropertyName("last_modified")] string? LastModified,
     [property: JsonPropertyName("first_seen")] string? FirstSeen,
     [property: JsonPropertyName("commits_touching")] int CommitsTouching
 );
 
-record StructureInfo(
+public record StructureInfo(
     int H1,
     int H2,
     [property: JsonPropertyName("h3_plus")] int H3Plus,
@@ -409,18 +419,18 @@ record StructureInfo(
     [property: JsonPropertyName("list_items")] int ListItems
 );
 
-record SelfLabelsInfo(
+public record SelfLabelsInfo(
     [property: JsonPropertyName("has_frontmatter")] bool HasFrontmatter,
     [property: JsonPropertyName("status_line")] string? StatusLine,
     [property: JsonPropertyName("decided_count")] int DecidedCount
 );
 
-record CrossRefsInfo(
+public record CrossRefsInfo(
     List<string> Outgoing,
     List<string> Incoming
 );
 
-record CodeRefsInfo(
+public record CodeRefsInfo(
     [property: JsonPropertyName("candidates_extracted")] int CandidatesExtracted,
     [property: JsonPropertyName("live_count")] int LiveCount,
     [property: JsonPropertyName("absent_count")] int AbsentCount,

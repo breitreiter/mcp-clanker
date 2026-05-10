@@ -49,6 +49,7 @@ public class Program
             "research" => await RunResearch(args[1..]),
             "init" => ProjectInit.Run(args[1..]),
             "signals" => Signals.Run(args[1..]),
+            "migrate" => Migrate.Run(args[1..]),
             "note" => Note.Run(args[1..]),
             "tidy" => await RunTidy(args[1..]),
             "wiki" => await RunWiki(args[1..]),
@@ -117,6 +118,13 @@ Substrate:
                                      self-labels, cross-refs, code-reference
                                      presence. Mechanical only; consumed by
                                      /project-migrate.
+  migrate [paths...]                 Phase 1 of /project-migrate: walk legacy
+    [--include glob]                 markdown sources, gather signals per doc,
+    [--exclude glob]                 heuristic-classify shape, write a plan to
+    [--out dir]                      <repo>.imp-proposals/_migration/M-NNN/.
+                                     No model calls. Default sources: project/.
+                                     Phase 2 (classification, proposals) not
+                                     built yet — see plans/project-migrate-phase1.md.
   note [<text> | -]                  Append a capture to the substrate's
                                      note inbox. `imp note "<text>"` is
                                      the dominant case; no args opens
