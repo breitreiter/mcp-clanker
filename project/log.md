@@ -1,0 +1,53 @@
+# Substrate log
+
+Append-only chronological record of substrate decisions, sweep
+findings, and architectural changes. Entries lead with
+`## [date] kind | title` so simple grep works
+(`grep "^## \[" log.md | tail -20`).
+
+---
+
+## [2026-05-10] design | four-layer substrate model
+
+Full snapshot in `substrate-layers.md`. Headlines:
+
+- Substrate is a four-layer stack: 0 structural (auto, gitignored
+  build cache), 1 rationale (anchored entries), 2 synthesis
+  (per-file digests + concept pages), 3 query (directory layout,
+  not a CLI).
+- Layer 3 collapsed from a CLI (`imp where/ref/digest/page`) into
+  a pre-rendered `imp/_index/` directory. Reads use the agent's
+  existing `Read`/`Glob`/`Grep`. Cline's "no index" stance applied
+  to substrate.
+- Authoring inversion: humans/agents capture into `imp stash`;
+  the gnome generates layer 1 entries overnight. Direct authoring
+  is reserved for `rules/`.
+- Surviving CLI surface: `imp stash`, `imp tidy`, `imp init`.
+  Reads are filesystem-only.
+
+## [2026-05-10] rename | project/ → imp/
+
+Substrate dir renamed to make tool ownership explicit by name.
+`plans/`, `bugs/`, `TODO.md`, and `rules/` lifted to repo root as
+human-owned dirs. Inside `imp/`: gnome-maintained content
+(`log.md`, `stash/`, `learnings/`, `reference/`, `concepts/`,
+`_index/`) plus `_meta/` for substrate conventions.
+
+Dropped: `aspirations/` (folds into CLAUDE.md), `tasks/` (TODO.md
+covers it).
+
+Open question: whether `<repo>.project-proposals/` follows to
+`<repo>.imp-proposals/` — affects the `project-promote` skill and
+existing docs.
+
+## [2026-05-10] research | code intelligence prior art surveyed
+
+Surveyed SCIP/LSIF/Kythe/Glean (symbol graphs), Aider/Continue
+(repo-map), Cursor/Cody/Tabby (embeddings), DeepWiki/Greptile
+(LLM synthesis), Doxygen (human rationale), Cline (no index).
+Key takeaways: stable symbol IDs as join keys (SCIP), file-
+incremental indexing (stack-graphs), token-budgeted PageRank
+skeletons (Aider) as cold-start primitive. The gap nobody fills
+well — *persisted, human-curated rationale anchored to code* —
+is exactly where imp's substrate wins. DeepWiki is the cautionary
+tale: auto-fabricated rationale goes stale and lacks human voice.
