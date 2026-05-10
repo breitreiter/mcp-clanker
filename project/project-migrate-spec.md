@@ -112,6 +112,49 @@ phase 2 is the expensive synthesis work.
 6. **Surface the plan.** Display to user. Get sign-off. With
    `--plan-only`, exit here.
 
+### Phase 1.5 — Topic clustering (added 2026-05-09)
+
+Single-doc signals (Phase 1) can't detect the polish trap on their
+own. The trap is a *relational* property — doc X supersedes doc Y
+on the same topic — which is invisible when looking at one doc at a
+time. Empirical confirmation: dreamlands' `design/combat.md`
+(historical postures) and `design/super_rps.md` (current shipped
+combat) both look fine in isolation; their relationship only shows
+when compared.
+
+Phase 1.5 groups docs by topic so Phase 2's classifier sees
+candidates *together*:
+
+1. **Embed each doc.** Use a sentence-embedding API
+   (`text-embedding-3-small` or equivalent) to produce a vector per
+   doc. ~150 docs × ~5K tokens ≈ 750K tokens; trivial cost.
+   Cache vectors in `_migration/M-NNN/embeddings.json` so resumes
+   skip re-embedding.
+2. **Pairwise cosine similarity.** Naive in-memory; no vector DB
+   needed at this scale.
+3. **Cluster.** Threshold-based grouping (e.g. similarity > 0.6
+   means same topic) or HDBSCAN-style if the threshold is hard to
+   pick. Each cluster is a candidate "topic group."
+4. **Surface clusters in the plan.** The Phase 1 plan output
+   includes the cluster groupings so the human can sanity-check
+   before paying for Phase 2.
+
+In Phase 2, the classifier sees the cluster as context: "doc X is
+in a cluster with docs Y and Z about combat. Y is most recent and
+most developed; X and Z look historical relative to Y. Confirm?"
+Polish-trap detection happens at the cluster level, not the doc
+level.
+
+**Embeddings are leveraged elsewhere in the substrate suite**,
+not just for migration. `/project-sync` needs to find related
+entries when generating concept pages. `/project-lint` needs to
+detect cross-rule semantic contradictions. A future
+`imp research --substrate-aware` benefits from finding related
+existing entries before answering. Probably warrants a shared
+`imp embed <path>` primitive (or library helper) that all the
+substrate skills consume — to be specced/built when the second
+consumer materializes.
+
 ### Phase 2 — Classification and proposal generation
 
 For each doc in the approved plan:
@@ -178,7 +221,17 @@ The classification combines:
 **No single signal is decisive.** The classifier uses all of them
 and reports its reasoning. The polish trap (decisions log, 2026-05-09)
 is the named failure mode where content polish was treated as a proxy
-for currency; the multi-signal approach is the explicit fix.
+for currency; the multi-signal approach is one half of the fix. The
+other half is **cluster-level comparison** (Phase 1.5) — polish-trap
+detection requires looking at related docs together, not just the
+suspect doc in isolation. Single-doc analysis can't see "this is
+historical *relative to* that newer doc on the same topic."
+
+(Empirical proof, 2026-05-09: dreamlands' `design/combat.md`
+postures doc and `design/super_rps.md` slot-RPS doc both look
+healthy in isolation. Only side-by-side does the polish trap
+become visible — postures is older, less-developed-structurally,
+prose-only; super_rps is newer, richly structured, code-anchored.)
 
 ## Output: proposal format
 
@@ -301,12 +354,18 @@ Sensible defaults; missing config is fine.
 1. **Phase 1 (cheap) standalone.** Implement discovery, signal
    gathering, sniff, plan output. Test on dreamlands' `project/`
    without any model calls — should produce a reasonable-looking
-   plan.md within a few seconds.
-2. **Cost estimator.** Token-counting pass over the doc content;
-   per-doc estimates summed.
-3. **Phase 2 classification.** Cloud subagent invocation per-doc,
-   with all signals in the prompt. Test on a small slice (3-5 docs)
-   first.
+   plan.md within a few seconds. *Already partially shipped: see
+   `imp signals <doc>` (Substrate/Signals.cs).*
+2. **Phase 1.5 clustering.** Embedding API call + cosine similarity
+   + threshold cluster. Cache embeddings under
+   `_migration/M-NNN/embeddings.json`. Likely warrants a shared
+   `imp embed` primitive once a second consumer (sync/lint) needs
+   it.
+3. **Cost estimator.** Token-counting pass over the doc content;
+   per-doc estimates summed; embedding cost added.
+4. **Phase 2 classification.** Cloud subagent invocation per-doc,
+   with all signals + cluster context in the prompt. Test on a
+   small slice (3-5 docs) first.
 4. **Proposal drafting.** Generate proposals to
    `<repo>.project-proposals/` from classifications. Verify
    `/project-promote` can apply them.
