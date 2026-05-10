@@ -87,6 +87,23 @@ from reading code":
 The parent also doesn't try to be exhaustive across the kinds it
 *does* write. Three good learnings beat ten thin ones.
 
+## Follow-on: `/project-migrate` for legacy content
+
+After the seed pass, the init-seed skill should check for legacy
+content the seed deliberately didn't touch (`project/` dir with
+non-substrate content, or any pre-existing design docs at the repo
+root beyond README/CLAUDE/TODO). If found, the skill ends by
+suggesting `/project-migrate` — that's the path for ingesting
+existing prose into structured substrate entries, distinct from the
+parent-knowledge seed this skill handles.
+
+Sequence: `imp init` → init-seed skill (this plan) → if legacy
+detected, `/project-migrate` (Phase 2 plan). The seed and migrate
+flows are complementary: seed captures what the parent knows from
+conversation; migrate captures what existing docs preserve. Neither
+subsumes the other, and running both is the normal init UX for a
+non-empty repo with prose history.
+
 ## Filling the gaps later
 
 The substrate accretes through normal use. The seed plus a few

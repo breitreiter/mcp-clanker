@@ -139,7 +139,28 @@ public static class ProjectInit
         Console.WriteLine($"  - Drop a capture: imp note \"<text>\" — the gnome processes it on `imp tidy`.");
         Console.WriteLine($"  - imp proposals (cross-boundary changes only) land at ../{repoName}.imp-proposals/.");
 
+        // Legacy-content hint: if `project/` exists and isn't this substrate,
+        // surface the migrate path. The init-seed skill should seed parent
+        // knowledge first; /project-migrate folds existing prose docs in.
+        var legacyProject = Path.Combine(repoRoot, "project");
+        if (Directory.Exists(legacyProject)
+            && !PathEqualsIgnoreCase(legacyProject, substrateDir)
+            && !File.Exists(Path.Combine(legacyProject, "_meta", "conventions.md")))
+        {
+            Console.WriteLine();
+            Console.WriteLine("Legacy content detected at project/. After the parent agent seeds");
+            Console.WriteLine($"the substrate with what it knows from context, run `imp migrate` then");
+            Console.WriteLine("/project-migrate to ingest the existing docs into substrate entries.");
+        }
+
         return 0;
+    }
+
+    static bool PathEqualsIgnoreCase(string a, string b)
+    {
+        var na = Path.GetFullPath(a).TrimEnd(Path.DirectorySeparatorChar);
+        var nb = Path.GetFullPath(b).TrimEnd(Path.DirectorySeparatorChar);
+        return string.Equals(na, nb, StringComparison.OrdinalIgnoreCase);
     }
 
     static void PrintUsage()
