@@ -1,50 +1,64 @@
 ---
-name: project-promote
-description: Use when reviewing and applying imp-generated proposals at <repo>.project-proposals/. Implements the trust-model gate between imp's read-only output and the substrate. Categorizes proposals by approval tier (always-safe / claude-approvable / human-required), shows rationale and previews, applies changes atomically. Default behavior with no args is to list pending proposals; takes a specific proposal id to review or --batch to walk all pending.
+name: imp-promote
+description: Use when reviewing and applying imp-generated proposals at <repo>.imp-proposals/. Cross-boundary trust gate — only proposals that touch human-owned dirs (rules/, plans/, bugs/, TODO.md) flow through here; imp writes its own dir directly. Categorizes proposals by tier (always-safe / claude-approvable / human-required), shows rationale and previews, applies atomically. Default behavior with no args is to list pending; takes a specific proposal id to review or --batch to walk all pending.
 ---
 
-# /project-promote
+# /imp-promote
 
-Reviews imp-generated proposals at `<repo>.project-proposals/` and
-applies them to the substrate at `project/` after appropriate
-approval. Closes the H8/H9 trust loop: imp proposes, promote applies,
-substrate stays auditable.
+Reviews imp-generated proposals at `<repo>.imp-proposals/` and
+applies them to **human-owned** substrate locations after appropriate
+approval. Imp writes its own dir (`imp/*`) directly under a distinct
+git author; only cross-boundary changes — those touching root-level
+human territory — flow through this skill.
 
-Design context lives in `<repo>/project/project-promote-spec.md` and
-`<repo>/project/project-substrate-notes.md` (H6, H8, H9, H10) if you
-need it. The procedure below is self-contained.
+Cross-boundary destinations imp can propose changes to:
+- `rules/` (root) — hard project invariants
+- `plans/` (root) — design intent / specs
+- `bugs/` (root) — bug reports
+- `TODO.md` (root) — running list
+
+Anything imp wants to write inside `imp/*` it commits directly with
+author `imp-gnome <noreply@imp.local>`. Auditability there is via
+git, not via this skill.
+
+Design context lives in imp's source repo at
+`project/project-promote-spec.md` and
+`project/project-substrate-notes.md`. The procedure below is
+self-contained.
 
 ## When to use
 
 - User asks to review imp's proposals, apply pending changes, or
   approve recent imp work.
-- User invokes the skill with `/project-promote` (with or without
+- User invokes the skill with `/imp-promote` (with or without
   arguments).
 - A scheduled routine wants to apply queued proposals (autonomous
   invocation — see Tier handling).
 
 When **not** to use:
 
-- The substrate doesn't exist yet → direct user to `/project-init`.
+- The substrate doesn't exist yet → direct user to `imp init`.
 - Outside a git repo → refuse.
-- Substrate has uncommitted changes (would break atomic rollback) →
-  refuse, ask user to commit substrate state first.
+- Cross-boundary dirs (`rules/`, `plans/`, `bugs/`, `TODO.md`) have
+  uncommitted changes — would break atomic rollback. Refuse, ask
+  user to commit those dirs first.
 
 ## Procedure
 
 ### 1. Locate substrate and proposals
 
 Find the substrate location:
-- Default: `<repo-root>/project/`. Get repo root via
-  `git rev-parse --show-toplevel`.
-- Override: read `project/_meta/config.yaml` `location:` if present.
+- Default: `<repo-root>/imp/` (new) or `<repo-root>/project/`
+  (legacy). Get repo root via `git rev-parse --show-toplevel`.
+- Override: read `<substrate>/_meta/config.yaml` `location:` if
+  present.
 
 Find the proposals directory:
-- Default: `<dirname-of-repo>/<basename-of-repo>.project-proposals/`.
+- Default: `<dirname-of-repo>/<basename-of-repo>.imp-proposals/`.
 - Override: `_meta/config.yaml` `proposals:` if present.
 
 If the substrate doesn't exist or doesn't have `_meta/conventions.md`:
-refuse with "no substrate found at `<location>` — run /project-init
+refuse with "no substrate found at `<location>` — run `imp init`
 first."
 
 If the proposals directory doesn't exist or has no `P-*.md` files:
@@ -52,15 +66,20 @@ print "no pending proposals." Exit cleanly.
 
 ### 2. Atomicity precondition
 
-Before doing anything else, verify `git status --short project/`
-shows no modifications. If there are any uncommitted substrate
-changes (staged or unstaged): refuse with "substrate has uncommitted
-changes — commit first so promote has a clean rollback target."
+Before doing anything else, verify the cross-boundary dirs are
+git-clean. Run `git status --short rules/ plans/ bugs/ TODO.md`. If
+any show modifications (staged or unstaged): refuse with
+"cross-boundary dirs have uncommitted changes — commit first so
+promote has a clean rollback target."
 
 Reasoning: promote applies changes by editing files in place. The
-rollback strategy is `git checkout project/`. That only works if
-the substrate is committed. Forcing the precondition keeps the
-implementation simple.
+rollback strategy is `git checkout rules/ plans/ bugs/ TODO.md`.
+That only works if those paths are committed. Forcing the
+precondition keeps the implementation simple.
+
+Note: do NOT include `imp/` in the cleanliness check — imp commits
+its own dir directly and may have uncommitted gnome work in flight
+that's unrelated to the proposals being applied.
 
 ### 3. List pending proposals
 
@@ -85,7 +104,7 @@ Pending proposals:
   P-2026-05-09-002  drift_alarm        always-safe          "Code in lib/X violates..."
   P-2026-05-09-003  learning_candidate claude-approvable    "Build R-NNN noted..."
 
-Run /project-promote <id> to review one, or /project-promote --batch
+Run /imp-promote <id> to review one, or /imp-promote --batch
 to walk through all of them.
 ```
 
@@ -117,9 +136,8 @@ Generated: 2026-05-09T14:30:00Z by imp-research:R-NNN
 <full rationale section, rendered as markdown>
 
 ## Proposed changes
-- move plans/active/x.md → plans/archive/x.md (state: shipped)
 - create rules/new-thing.md (preview-1)
-- append project/log.md
+- edit (append_section) plans/migration.md
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
@@ -175,7 +193,7 @@ operations last (idempotent if re-run).
 #### `create`
 ```yaml
 - type: create
-  path: project/rules/new-thing.md
+  path: rules/new-thing.md
   preview: preview-1     # references a "## Preview: preview-1" section in the proposal
 ```
 
@@ -189,17 +207,15 @@ operations last (idempotent if re-run).
 #### `move`
 ```yaml
 - type: move
-  from: project/plans/active/x.md
-  to: project/plans/archive/x.md
+  from: plans/x.md
+  to: plans/archive/x.md
   set_frontmatter:           # optional
     state: shipped
     updated: 2026-05-09
 ```
 
-- Use Bash `mv` to move the file.
-- If the source has a companion directory (e.g. `from` is
-  `plans/active/x.md` and `plans/active/x/` exists), move the dir
-  too: `mv project/plans/active/x project/plans/archive/x`.
+- Use Bash `mv` to move the file. (Rare for human-owned dirs; humans
+  usually move their own files.)
 - If `set_frontmatter:` is present, update those keys in the new
   file's YAML frontmatter via Edit. **Read the file at its new path
   before Edit** — the Edit tool requires a prior Read of the exact
@@ -209,20 +225,21 @@ operations last (idempotent if re-run).
 #### `append`
 ```yaml
 - type: append
-  path: project/log.md
+  path: TODO.md
   content: |
-    ## [2026-05-09] promotion | x shipped
-    Promoted from imp-research R-2026-05-09-002.
+    - [ ] Investigate drift in StreamingProvider — see imp/learnings/streaming-2026-05-10.md
 ```
 
 - Read the target file, append the content (with a leading newline
   if the file doesn't end in one), write back via Edit (old_string =
   last few lines, new_string = last few lines + appended content).
+- `imp/log.md` is NOT a target for this skill — imp writes its own
+  log directly under the `imp-gnome` author.
 
 #### `set_frontmatter`
 ```yaml
 - type: set_frontmatter
-  path: project/plans/active/x.md
+  path: plans/x.md
   set:
     state: active
     updated: 2026-05-09
@@ -234,7 +251,7 @@ operations last (idempotent if re-run).
 #### `edit` (v0.1: append-section only)
 ```yaml
 - type: edit
-  path: project/rules/foo.md
+  path: rules/foo.md
   edit_kind: append_section
   section_heading: "## Open questions"   # if absent, append to end of body
   content: |
@@ -259,9 +276,9 @@ operations last (idempotent if re-run).
   include a separate `delete` for the companion dir.
 
 **On any failure**: do not continue to the next change. Roll back via
-`git checkout project/` (which restores all substrate files to the
-last commit) and report the failure to the user. The proposal stays
-`pending`.
+`git checkout rules/ plans/ bugs/ TODO.md` (which restores all
+cross-boundary files to the last commit) and report the failure to
+the user. The proposal stays `pending`.
 
 ### 7. Update proposal status
 
@@ -277,8 +294,8 @@ After all changes apply successfully:
 
 ### 8. Log
 
-Append an entry to `project/log.md` (as a substrate write — this is
-itself a substrate change but it's `always-safe` so don't recurse):
+Append an entry to `imp/log.md` (the substrate's running log —
+written by both imp and the human/skill workflow):
 
 ```
 ## [YYYY-MM-DD] promote | applied P-NNN
@@ -288,7 +305,7 @@ Affected: <list of paths touched>.
 ```
 
 (Use kind `promote` here — the audit-trail entry recording that
-`/project-promote` applied a proposal. Don't use `promotion` as the
+`/imp-promote` applied a proposal. Don't use `promotion` as the
 kind, since "promotion" is also a proposal category name and the
 collision is confusing in `log.md`.)
 
@@ -303,39 +320,44 @@ For each change in the proposal's changes block, determine its tier.
 The proposal's overall tier is the *highest* tier across all its
 changes.
 
+The skill only handles cross-boundary changes — anything destined
+for `imp/*` is rejected as out-of-scope (imp should have committed
+that directly).
+
 | Change | Target | Tier |
 |---|---|---|
-| `append` | `project/log.md` | always-safe |
-| `append` | `project/_drift.md` (when it exists) | always-safe |
-| `move` | from `plans/active/` to `plans/archive/`, with at most a `state:` set_frontmatter | claude-approvable |
-| `create` | in `learnings/`, `tasks/`, or `plans/active/` (state: exploring) | claude-approvable |
-| `set_frontmatter` | any plan file, only `state` / `updated` keys | claude-approvable |
-| `edit` (append_section) | in `learnings/`, `tasks/`, `plans/`, `concepts/` | claude-approvable |
-| `create` | in `rules/` | **human-required** |
-| `create` | in `aspirations/` | **human-required** |
-| `create` | in `reference/` | **human-required** |
-| `edit` | in `rules/` or `aspirations/` (any kind) | **human-required** |
-| `set_frontmatter` | in `rules/` or `aspirations/` | **human-required** |
+| `append` | `TODO.md` | always-safe |
+| `edit` (append_section) | `plans/<file>.md` | claude-approvable |
+| `set_frontmatter` | `plans/<file>.md`, only `state` / `updated` keys | claude-approvable |
+| `create` | `plans/<new>.md` (state: exploring) | claude-approvable |
+| `move` | between `plans/` and `plans/archive/` | claude-approvable |
+| `create` | `rules/<new>.md` | **human-required** |
+| `edit` | `rules/<file>.md` (any kind) | **human-required** |
+| `set_frontmatter` | `rules/<file>.md` | **human-required** |
+| `edit` | `bugs/<file>.md` (closing or material change) | **human-required** |
 | `delete` | any path | **human-required** |
-| Anything touching `_meta/conventions.md` or `_meta/config.yaml` | | **human-required** |
-| Anything touching `concepts/` (other than appends) | | **human-required** (route to `/project-sync` instead) |
+| Anything touching `imp/*` | | **out-of-scope — refuse** (imp writes its own dir directly) |
+| Anything touching `_meta/conventions.md` or `_meta/config.yaml` | | **out-of-scope — refuse** (those are imp/_meta, imp's territory) |
 
 If any change matches no rule above, default to **human-required**.
 Conservative-by-default.
 
 ## Atomicity / safety
 
-- Precondition: substrate must be git-clean (no uncommitted changes
-  in `project/`). Refuse if not.
-- Apply changes in order; on first failure, `git checkout project/`
-  to restore.
+- Precondition: cross-boundary dirs must be git-clean (no uncommitted
+  changes in `rules/`, `plans/`, `bugs/`, `TODO.md`). Refuse if not.
+  Do NOT include `imp/` in this check — imp commits its own dir
+  separately.
+- Apply changes in order; on first failure,
+  `git checkout rules/ plans/ bugs/ TODO.md` to restore.
 - The proposal status update (step 7) and log append (step 8) happen
   *after* successful apply. If they fail, the substrate change is
   already committed-shaped (clean tree mutated to a new clean state)
   but the proposal hasn't been marked applied. Re-running promote
   will detect the substrate matches the proposal's intended state
   and skip — see "Idempotency" below.
-- Never write outside `project/` or `<proposals-dir>/`.
+- Never write outside the cross-boundary dirs or `<proposals-dir>/`.
+  Refuse any proposal whose changes target `imp/*`.
 
 ## Idempotency
 
@@ -380,11 +402,12 @@ update (incomplete).
 
 ## Configuration
 
-Read from `project/_meta/config.yaml`:
+Read from `<substrate>/_meta/config.yaml` (i.e. `imp/_meta/config.yaml`
+for new layouts, `project/_meta/config.yaml` for legacy):
 
 ```yaml
 # Optional
-auto_safe: false       # if true, auto-apply always-safe proposals on /project-promote with no args
+auto_safe: false       # if true, auto-apply always-safe proposals on /imp-promote with no args
 batch_default: false   # if true, default to --batch behavior on no-arg invocation
 ```
 
@@ -397,9 +420,9 @@ Defaults conservative.
   the proposal should currently work around it via `create` + manual
   delete. Add full replace_section once we see real proposals
   needing it.
-- **Concept page handling**: if a proposal touches `concepts/`
-  beyond appends, refuse and route to `/project-sync` (not yet
-  built). For v0.1 we don't expect this.
+- **Concept pages**: `concepts/` lives in `imp/` and is gnome
+  territory; proposals never target it. The skill refuses any
+  proposal touching `imp/*` paths.
 - **Auto-batch always-safe**: `--auto-safe` flag does this. Could
   default to true once trust is established.
 - **Autonomous invocation** (Claude on the human's behalf, not

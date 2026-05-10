@@ -399,7 +399,7 @@ Rules:
   existing `<repo>.researches/` / `<repo>.worktrees/`), invisible to
   normal browsing. Mid-run state isn't surfaced.
 - **Either Claude or the human can approve a proposal.** Approval
-  flow is a separate skill (`/project-promote`).
+  flow is a separate skill (`/imp-promote`).
 - **Auto-approval gradient.** Not all proposals need human eyes:
   - Always-safe (Claude auto-applies): `log.md` appends, archive
     moves (content preserved, kind unchanged).
@@ -418,7 +418,7 @@ or batches).
 ### H9. Proposal file is the output contract
 
 imp's deliverable from any sweep or promotion-candidate run is a
-single markdown file in `<repo>.project-proposals/P-NNN-<slug>.md`,
+single markdown file in `<repo>.imp-proposals/P-NNN-<slug>.md`,
 with structure:
 
 - Frontmatter: id, generated_at, generated_by (imp run id), sweep
@@ -426,7 +426,7 @@ with structure:
 - Rationale (human-readable narrative — why this proposal exists).
 - Proposed changes (mechanical list — moves, creates, appends, edits).
 - Previews of any new content.
-- "How to apply" pointer — `/project-promote <proposal-id>`.
+- "How to apply" pointer — `/imp-promote <proposal-id>`.
 
 Categories of proposal (initial set):
 
@@ -640,7 +640,7 @@ is **synthesis vs. static**, not "substrate vs. primitive."
   `imp wiki` (state-leg generator), and **`imp init`** (substrate
   scaffold; templates as embedded content; ~60ms per run).
 - **Claude Code skills** own operations that need synthesis,
-  judgment, or interactive review — `/project-promote` (interactive
+  judgment, or interactive review — `/imp-promote` (interactive
   proposal review), `/project-migrate` (multi-signal classification
   of legacy docs, planned), `/project-sync` (cross-source concept
   page synthesis, planned), `/project-lint` (drift detection +
@@ -824,7 +824,7 @@ and require explicit classification?
   primitives + Claude Code skills + scheduled routines).** imp
   owns `build`, `research`, `wiki` (callable). Claude Code skills
   own `/project-init`, `/project-migrate`, `/project-lint`,
-  `/project-sync`, `/project-promote`. Scheduled routines drive
+  `/project-sync`, `/imp-promote`. Scheduled routines drive
   nightly/weekly maintenance. Substrate lives in-repo
   (`project/` or configurable); staging in sidecar
   (`<repo>.project-staging/`), matching imp's existing
@@ -848,12 +848,12 @@ and require explicit classification?
   rules edits human-required). See H8.
 - **2026-05-09. Proposal file is imp's output contract.** imp's
   deliverable from sweeps and promotion runs is a single markdown
-  file at `<repo>.project-proposals/P-NNN-<slug>.md`. Categories:
+  file at `<repo>.imp-proposals/P-NNN-<slug>.md`. Categories:
   promotion / demotion / drift alarm / doc rot / learning candidate /
   concept staleness / TODO promotion. See H9.
 - **2026-05-09. Bidirectional flow operationally:** foreground
   Claude reads substrate → writes contract → runs imp →
-  `/project-promote` drafts candidates → human reviews → promoted
+  `/imp-promote` drafts candidates → human reviews → promoted
   content enters substrate with provenance. Closes the H6 loop
   with concrete steps.
 - **2026-05-09. The "polish trap" is real and named.** During the

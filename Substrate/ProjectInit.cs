@@ -105,7 +105,7 @@ public static class ProjectInit
 
         // .gitignore upsert
         var gitignorePath = Path.Combine(repoRoot, ".gitignore");
-        var gitignoreLine = $"{repoName}.project-proposals/";
+        var gitignoreLine = $"{repoName}.imp-proposals/";
         var gitignoreAction = UpsertGitignoreLine(gitignorePath, gitignoreLine);
 
         // Summary
@@ -119,7 +119,7 @@ public static class ProjectInit
         Console.WriteLine("Next:");
         Console.WriteLine($"  - Read {RelativeTo(repoRoot, substrateDir)}/_meta/conventions.md for the spec.");
         Console.WriteLine($"  - When new work starts, drop a plan in {RelativeTo(repoRoot, substrateDir)}/plans/active/<slug>.md (state: exploring).");
-        Console.WriteLine($"  - imp proposals will land at ../{repoName}.project-proposals/ (sidecar of repo root, gitignored).");
+        Console.WriteLine($"  - imp proposals will land at ../{repoName}.imp-proposals/ (sidecar of repo root, gitignored).");
 
         return 0;
     }
@@ -265,7 +265,7 @@ public static class ProjectInit
 
             ### imp proposals
 
-            imp produces proposals at `{repoName}.project-proposals/P-NNN-<slug>.md`
+            imp produces proposals at `{repoName}.imp-proposals/P-NNN-<slug>.md`
             when scheduled sweeps detect promotion candidates, drift, doc rot,
             etc. Auto-approval gradient when reviewing on the user's behalf:
 

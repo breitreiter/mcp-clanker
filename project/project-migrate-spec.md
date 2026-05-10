@@ -1,7 +1,7 @@
 # `/project-migrate` — Spec
 
 > Takes a clutter directory of mixed-kind legacy markdown docs and
-> produces a batch of substrate proposals (for `/project-promote` to
+> produces a batch of substrate proposals (for `/imp-promote` to
 > apply). Lossy by design, multi-signal, human-in-the-loop. The
 > headline operation for legacy-rich repos like dreamlands.
 
@@ -22,7 +22,7 @@ with the substrate's structured taxonomy without classification.
 `/project-migrate` does the classification using cloud subagents
 (Sonnet-class, per Q13/H7), surfaces its reasoning to the human, and
 produces proposals that flow through the existing
-`/project-promote` apply path.
+`/imp-promote` apply path.
 
 ## Scope
 
@@ -37,13 +37,13 @@ produces proposals that flow through the existing
 - Drafts proposals (one per resulting substrate entry, plus a
   meta-proposal that lists what to drop/archive/supersede in the
   legacy tree).
-- Tracks migration state at `<repo>.project-proposals/_migration/M-NNN/`
+- Tracks migration state at `<repo>.imp-proposals/_migration/M-NNN/`
   so re-runs are idempotent and resumable.
 - Reports cost estimate before doing the expensive synthesis pass.
 
 **Does not:**
 - Modify legacy content directly. All output is proposals.
-- Apply proposals — that's `/project-promote`'s job.
+- Apply proposals — that's `/imp-promote`'s job.
 - Decide for ambiguous cases without human input — surfaces
   classifications with reasoning, lets the human override.
 - Synthesize concept pages — `/project-sync` does that after
@@ -106,7 +106,7 @@ phase 2 is the expensive synthesis work.
    classify + draft) × N docs. Print cost in $ at current Sonnet
    rates.
 5. **Write the migration plan.** Write
-   `<repo>.project-proposals/_migration/M-NNN/plan.md` with: doc
+   `<repo>.imp-proposals/_migration/M-NNN/plan.md` with: doc
    list, signals per doc, sniffed shape, estimated cost, and a
    per-doc proposed action (per-section / one-shot / drop / defer).
 6. **Surface the plan.** Display to user. Get sign-off. With
@@ -188,7 +188,7 @@ For each doc in the approved plan:
    doc), flag explicitly: "this reads authoritative but signals
    suggest historical." Don't auto-classify as current.
 4. **Draft proposal.** For each kept section/doc, generate a
-   `create` proposal in `<repo>.project-proposals/P-NNN-*.md` with:
+   `create` proposal in `<repo>.imp-proposals/P-NNN-*.md` with:
    - The classified content (cleaned up, frontmatter added,
      `provenance.source: migration:M-NNN`).
    - A rationale citing the signals that drove the classification.
@@ -202,7 +202,7 @@ For each doc in the approved plan:
 6. **Update migration state.** Write per-doc status to
    `_migration/M-NNN/state.json` so resumes know what's done.
 
-The user then runs `/project-promote --batch` (or per-proposal) to
+The user then runs `/imp-promote --batch` (or per-proposal) to
 review and apply.
 
 ### Per-section classification details
@@ -381,8 +381,8 @@ Sensible defaults; missing config is fine.
    with all signals + cluster context in the prompt. Test on a
    small slice (3-5 docs) first.
 4. **Proposal drafting.** Generate proposals to
-   `<repo>.project-proposals/` from classifications. Verify
-   `/project-promote` can apply them.
+   `<repo>.imp-proposals/` from classifications. Verify
+   `/imp-promote` can apply them.
 5. **`--resume`.** State tracking + skip-completed.
 6. **`--one-at-a-time`.** Per-doc human gate.
 7. **Cleanup proposal**. Generated at end of Phase 2, lists
@@ -399,7 +399,7 @@ Sensible defaults; missing config is fine.
 - Phase 1 (no-model) runs against dreamlands' `project/` and
   produces a sensible plan in seconds.
 - Phase 2 classifies a small slice, produces proposals,
-  `/project-promote` applies them cleanly.
+  `/imp-promote` applies them cleanly.
 - Polish-trap test case (dreamlands' postures vs. RPS) is correctly
   classified — postures-doc as historical, RPS-doc as current —
   without human intervention.

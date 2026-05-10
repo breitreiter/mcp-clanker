@@ -40,6 +40,36 @@ Open question: whether `<repo>.project-proposals/` follows to
 `<repo>.imp-proposals/` — affects the `project-promote` skill and
 existing docs.
 
+## [2026-05-10] design | trust model partitioned by directory ownership
+
+Pre-rename: every imp write went through proposals (humans approved
+each one). That made sense when imp shared `project/` with
+human-authored content (rules, aspirations, learnings). Post-rename
+(`project/` → `imp/`, with `rules/`/`plans/`/`bugs/`/`TODO.md` lifted
+to root), imp's own dir is fully imp territory; the proposal gate on
+imp's writes there is needless paperwork.
+
+New model: imp writes directly to `imp/*` under a distinct git author
+(`imp-gnome <noreply@imp.local>`, set per-commit so no GH account
+needed). Auditability via `git log -- imp/`. Proposals only fire for
+cross-boundary writes — `rules/`, `plans/`, `bugs/`, `TODO.md`.
+
+Code stays out of scope; build mode has its own trust pipeline.
+
+## [2026-05-10] rename | <repo>.project-proposals → <repo>.imp-proposals
+                  | /project-promote → /imp-promote
+
+Follows the `project/` → `imp/` rename. Proposals dir and the skill
+that applies them now match the substrate dir name. Skill content
+narrowed to reflect the new trust model: anything destined for
+`imp/*` is out-of-scope (refused), tier table simplified, atomicity
+precondition checks `rules/ plans/ bugs/ TODO.md` cleanliness only
+(not `imp/`, since imp may have uncommitted gnome work in flight).
+
+Skill filename: `skills/project-promote.md` → `skills/imp-promote.md`.
+Spec doc filenames in `project/` left alone (`project-promote-spec.md`,
+`project-migrate-spec.md`) — internal references updated.
+
 ## [2026-05-10] rename | stash → note (CLI verb)
 
 `imp stash` renamed to `imp note` to avoid conversational and

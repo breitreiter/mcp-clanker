@@ -14,7 +14,7 @@
 
 Create the directory layout, conventions, and ambient instructions
 that let the substrate suite (`/project-lint`, `/project-sync`,
-`/project-promote`, `/project-migrate`) operate. Makes the substrate
+`/imp-promote`, `/project-migrate`) operate. Makes the substrate
 *real* — files on disk that foreground Claude and imp primitives can
 read and write.
 
@@ -28,7 +28,7 @@ read and write.
 - Writes a starter `project/log.md`.
 - Adds a substrate-aware block to repo `CLAUDE.md` (creates if
   missing) so foreground Claude knows how to read/write.
-- Adds `<repo>.project-proposals/` to `.gitignore` if not already
+- Adds `<repo>.imp-proposals/` to `.gitignore` if not already
   ignored. (imp's private scratch lives elsewhere — see H8 in
   substrate notes — and is not the user's concern at init time.)
 
@@ -173,9 +173,9 @@ For drift semantics per kind, see `project/_meta/conventions.md`.
 
 ### imp proposals
 
-imp produces proposals at `<repo>.project-proposals/P-NNN-<slug>.md`
+imp produces proposals at `<repo>.imp-proposals/P-NNN-<slug>.md`
 when scheduled sweeps detect promotion candidates, drift, doc rot, or
-similar. Review pending proposals via `/project-promote` (or skim the
+similar. Review pending proposals via `/imp-promote` (or skim the
 directory directly). Approval gradient:
 
 - **Always-safe** (auto-apply): `log.md` appends, archive moves.
@@ -209,7 +209,7 @@ A single optional file at `project/_meta/config.yaml`:
 
 ```yaml
 location: project/                       # where the substrate lives (relative to repo root)
-proposals: ../<repo>.project-proposals/  # where imp proposals land (sidecar, gitignored)
+proposals: ../<repo>.imp-proposals/  # where imp proposals land (sidecar, gitignored)
 tasks_path: project/tasks/               # or TODO.md if user wants flat task tracking
 ```
 

@@ -23,7 +23,7 @@ Full conventions: `_meta/conventions.md`.
 
 - **You (human)** and **foreground Claude** — full read/write here.
 - **imp (background)** — read-only. Produces proposals at
-  `{{REPO}}.project-proposals/` for review and approval.
+  `{{REPO}}.imp-proposals/` for review and approval.
 
 See `_meta/conventions.md` for the auto-approval gradient and the
 proposal categories.

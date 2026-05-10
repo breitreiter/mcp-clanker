@@ -244,6 +244,53 @@ ingest), but the dirs themselves stay informal.
 during tidy to track drift against cited code, but never edits the
 body.
 
+## Trust model (partitioned by directory ownership)
+
+Imp's writes are gated by which directory they touch.
+
+**Direct-write (imp's own territory, no approval gate):**
+- `imp/learnings/`, `imp/reference/`, `imp/concepts/`, `imp/_index/`
+- `imp/log.md`
+- `imp/note/{processed,discarded}/` (the gnome moves files here from
+  `inbox/` after processing)
+- `.imp/` cache (gitignored anyway)
+
+The gnome writes these as part of nightly `imp tidy`. Auditability
+comes from git, not a proposal queue. Imp's commits use a distinct
+git author set per-commit (no GH account needed — a noreply email is
+fine):
+
+```
+git -c user.name="imp-gnome" \
+    -c user.email="noreply@imp.local" \
+    commit -m "imp tidy: <summary>"
+```
+
+This makes imp's edits trivially filterable
+(`git log --author=imp-gnome` or `git log -- imp/`). Reverse-out is
+plain `git revert <sha>`.
+
+**Proposal-required (cross-boundary):**
+
+Imp must NOT write directly to:
+- `rules/` (root, human-authored hard invariants)
+- `plans/`, `bugs/`, `TODO.md` (root, informal human docs)
+
+When the gnome wants to suggest changes here, it writes proposals to
+`<repo>.imp-proposals/P-NNN-<slug>.md` (sibling of the repo root,
+gitignored in the main repo). The `/imp-promote` skill reviews and
+applies them. This is the smaller, narrower trust gate that survives
+the new model — most nights it's empty.
+
+**Out of scope for the gnome entirely:**
+- Code edits. Imp's *build mode* does code work in worktrees with its
+  own proof-of-work pipeline; that's a different trust story and
+  lives outside the substrate.
+
+The principle: imp can write to its own dir without ceremony but
+cannot reach into human territory unsupervised. Auditability sits on
+git, not approval queues.
+
 ## Operating principles
 
 - Eventual consistency over real-time. Daytime accumulates drift;
@@ -254,11 +301,9 @@ body.
   gnome's job is to lay out files so those tools compose well.
 - Composition still matters — it just happens at gnome time
   (pre-rendered views) rather than query time.
-- Trust model unchanged: imp produces proposals at
-  `<repo>.project-proposals/` (name predates the `project/` →
-  `imp/` rename — possibly should follow to
-  `<repo>.imp-proposals/`; flagged as open question). Humans
-  approve via `project-promote`.
+- Trust model is partitioned by directory ownership (see Trust
+  model section). Imp writes directly to its own dir; proposals
+  exist only for cross-boundary edits to root-level human dirs.
 
 ## Out of scope
 
@@ -300,9 +345,6 @@ body.
   generated, and how (heuristic vs. configured).
 - Slash-command surface (`/note` etc.) — separate from CLI, not
   yet sketched.
-- Whether `<repo>.project-proposals/` follows the `project/` →
-  `imp/` rename to `<repo>.imp-proposals/`. Affects the
-  `project-promote` skill and any docs referencing the path.
 
 ## Prior art that shaped this
 

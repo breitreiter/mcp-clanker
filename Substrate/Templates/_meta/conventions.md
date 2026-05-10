@@ -147,7 +147,7 @@ Who can write to the substrate:
 | imp (any mode) | **read-only** | read/write (private) | write proposals only |
 
 imp never writes to the substrate directly. Output is a proposal
-markdown file at `<repo>.project-proposals/P-NNN-<slug>.md` for
+markdown file at `<repo>.imp-proposals/P-NNN-<slug>.md` for
 review and approval.
 
 ### Auto-approval gradient
@@ -220,7 +220,7 @@ Optional `_meta/config.yaml`:
 
 ```yaml
 location: project/                       # substrate location, relative to repo root
-proposals: ../{{REPO}}.project-proposals/  # imp's proposal sidecar (gitignored)
+proposals: ../{{REPO}}.imp-proposals/  # imp's proposal sidecar (gitignored)
 tasks_path: project/tasks/               # or root TODO.md if you prefer flat
 ```
 
