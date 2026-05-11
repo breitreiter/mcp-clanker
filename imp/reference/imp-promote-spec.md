@@ -1,8 +1,18 @@
 ---
-superseded_by: imp/reference/imp-promote-spec.md
-migration_disposition: superseded
-migrated_at: 2026-05-10
-migrated_via: project-migrate-skill:M-2026-05-10-1855
+kind: reference
+title: /imp-promote spec — proposal format and apply procedure
+created: 2026-04-28
+updated: 2026-05-10
+provenance:
+  source: project-migrate-skill:M-2026-05-10-1855
+  migrated_at: 2026-05-10
+  origin: project/project-promote-spec.md
+touches:
+  files:
+    - skills/imp-promote.md
+  features:
+    - imp-promote
+    - proposal-format
 ---
 
 # `/imp-promote` — Spec

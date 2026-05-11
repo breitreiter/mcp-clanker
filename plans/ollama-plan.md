@@ -1,11 +1,30 @@
 ---
-superseded_by: plans/ollama-plan.md
-migration_disposition: superseded
-migrated_at: 2026-05-10
-migrated_via: project-migrate-skill:M-2026-05-10-1855
+kind: plan
+title: Add Ollama (local open-weight) executor support
+state: active
+created: 2026-04-24
+updated: 2026-05-10
+touches:
+  files:
+    - Infrastructure/Providers.cs
+    - Infrastructure/Prompts/
+  features: [provider-selection, executor-selection, local-inference]
+provenance:
+  source: project-migrate-skill:M-2026-05-10-1855
+  migrated_at: 2026-05-10
 ---
 
-# Plan to add Ollama support
+# Add Ollama (local open-weight) executor support
+
+**Outcome (2026-05-10):** Phase 1 shipped — `Infrastructure/Providers.cs`
+exposes a `qwen` provider case (`CreateQwen`) documented as the
+OpenAI-compatible client for DashScope or a local Ollama at
+`http://localhost:11434/v1`. Phases 2–4 still open. The honesty
+check has fired once for qwen3-coder specifically — see
+`imp/learnings/qwen-coder-not-viable-as-build-executor.md` —
+which routes that model to research mode only and motivates
+per-mode model configuration. Devstral-Small and gpt-oss-20b
+remain untested against the build harness.
 
 ## Premise
 
@@ -25,7 +44,7 @@ actually clear the bar this harness already sets for a provider?**
 
 The harness is demanding in ways that matter for local models:
 
-- **Tool-calling reliability is load-bearing.** `Executor.cs:52`
+- **Tool-calling reliability is load-bearing.** The executor loop
   runs up to 500 tool calls with strict JSON schemas. `finish_work`
   uses `ToolMode.RequireAny` and expects a nested `reports[]`
   structure. Closeout does the same in fresh context. A model that
@@ -96,17 +115,20 @@ slower. Not a blocker — the whole premise is "cheap slow model"
 ### Integration effort
 
 Low. Ollama exposes an OpenAI-compatible API at
-`http://localhost:11434/v1`. The existing `CreateOpenAI` in
-`Providers.cs:64` would work verbatim if we let the endpoint
-be overridden. A dedicated `Ollama` case in the switch keeps it
-legible and makes pricing/prompt routing easier.
+`http://localhost:11434/v1`. The existing OpenAI client in
+`Infrastructure/Providers.cs` already works verbatim with the
+endpoint overridden — the shipped `CreateQwen` case demonstrates
+the pattern. A dedicated `Ollama` case (or a renamed
+local-OpenAI-compatible provider) would keep pricing/prompt
+routing legible if local vs. DashScope distinctions start to
+matter.
 
 ## The path
 
 | Phase | Goal | Ships | How you validate | Sessions |
 |---|---|---|---|---|
-| **1. Provider wire-up** | Harness can target a local Ollama and finish a trivial contract | `Ollama` case in `Providers.cs` (OpenAI-compatible client with configurable `BaseUrl` + `Model` + `NumCtx`); example config block; `Pricing.cs` returns $0 for Ollama models; `dotnet run -- --ping Ollama` works | T-001 (trivial write_file contract) runs end-to-end with Devstral-Small and terminates `success`. Trace is readable, POW is well-formed | 1 |
-| **2. Tool-call shakeout** | Model emits our schemas reliably enough to trust | Author `Prompts/Ollama.md` if default prompt doesn't produce clean `finish_work` calls (likely needed); tighten schemas if the model struggles with nested `reports[]`; log tool-call parse failures in trace if not already | Run T-002 through T-005 (existing validation set). Measure: fraction of runs that hit `finish_work` cleanly vs. bail with finish_reason=length / malformed call. Write findings to project/ollama-notes.md | 1–2 |
+| **1. Provider wire-up** *(shipped)* | Harness can target a local Ollama and finish a trivial contract | `qwen` case in `Providers.cs` (OpenAI-compatible client with configurable `BaseUrl` + `Model` + `NumCtx`); example config block; `Pricing.cs` returns $0 for local models; `dotnet run -- ping <provider>` works | T-001 (trivial write_file contract) runs end-to-end and terminates `success`. Trace is readable, POW is well-formed | 1 |
+| **2. Tool-call shakeout** | Model emits our schemas reliably enough to trust | Author `Prompts/<provider>.md` if default prompt doesn't produce clean `finish_work` calls (likely needed); tighten schemas if the model struggles with nested `reports[]`; log tool-call parse failures in trace if not already | Run T-002 through T-005 (existing validation set). Measure: fraction of runs that hit `finish_work` cleanly vs. bail with finish_reason=length / malformed call. Write findings to notes | 1–2 |
 | **3. Real contract** | Enough signal to say "works" or "doesn't" | Pick 2 medium contracts from the v2 backlog, run each 3× on local. Capture terminal-state distribution, tool-call count, wall time, closeout verdict | Compare against same contracts run on Azure. Decision point: is this good enough that a 4090 owner should use it? Answer honestly — "not yet, but close" is a valid outcome that ends the plan here | 1 |
 | **4. (Conditional) Mixed-mode closeout** | Local executor, cloud reviewer — cheap execution, trustworthy verdict | Add config knob so closeout uses a different provider than the executor; reviewer routes to Anthropic/Azure while executor stays on Ollama | Same closeout "lying contract" from v2 phase 5 gets caught even when executor is a weak local model. Ship only if phase 3 shows local closeout has a meaningful false-pass rate | 1 |
 
@@ -143,6 +165,12 @@ The worst outcome is shipping a polished Ollama integration that
 rarely closes out real contracts. Better to ship a blunt one with
 honest notes.
 
+For qwen3-coder specifically, the honesty check has already fired:
+see `imp/learnings/qwen-coder-not-viable-as-build-executor.md`.
+That outcome routes qwen3-coder to research mode only and
+motivates per-mode model configuration. It does not generalize to
+Devstral or gpt-oss-20b, which remain the untested candidates.
+
 ## Explicitly deferred
 
 Not on the path unless real signal demands them:
@@ -172,11 +200,14 @@ Not on the path unless real signal demands them:
 
 ## See also
 
-- `Providers.cs` — the switch this plan extends
-- `v2-plan.md` phase 5 — the closeout pattern phase 4 here
-  optionally composes with
-- `v3-plan.md` — LSP tools are orthogonal; local + LSP is fine,
-  no sequencing dependency
-- `BRIEF.md` — "Non-Anthropic, non-Azure model backends" was a
-  v1 non-goal; this plan is the conscious reversal once v2
+- `Infrastructure/Providers.cs` — the switch this plan extends;
+  `CreateQwen` is the shipped Phase 1 entry point
+- `imp/learnings/qwen-coder-not-viable-as-build-executor.md` —
+  honesty-check outcome for qwen3-coder
+- `project/v2-plan.md` phase 5 — the closeout pattern phase 4
+  here optionally composes with
+- `project/v3-plan.md` — LSP tools are orthogonal; local + LSP is
+  fine, no sequencing dependency
+- `project/BRIEF.md` — "Non-Anthropic, non-Azure model backends"
+  was a v1 non-goal; this plan is the conscious reversal once v2
   observability makes the experiment worth running

@@ -1,21 +1,43 @@
 ---
-superseded_by: plans/imp-init.md
-migration_disposition: superseded
-migrated_at: 2026-05-10
-migrated_via: project-migrate-skill:M-2026-05-10-1855
+kind: plan
+title: imp init — scaffold a project substrate
+state: shipped
+created: 2026-05-09
+updated: 2026-05-10
+shipped: 2026-05-09
+touches:
+  files: [Substrate/ProjectInit.cs, Substrate/Templates, Program.cs]
+  features: [substrate, init]
+supersedes: []
+provenance:
+  source: project-migrate-skill:M-2026-05-10-1855
+  migrated_at: 2026-05-10
+topics: [substrate, init, cli]
 ---
 
-# `imp init` — Spec
+# imp init — scaffold a project substrate
 
-> Scaffolds a project substrate (the structured layout from
-> `project-substrate-notes.md`) in the current repo. CLI command,
-> not a Claude Code skill — see substrate-notes Q13 for the
-> boundary. Does not migrate legacy content — that's
-> `/project-migrate`'s job (planned, Claude Code skill).
->
-> **Implemented**: see `Substrate/ProjectInit.cs` and
-> `Substrate/Templates/`. Runs in ~60ms (templates are static
-> files copied with `{{REPO}}` and `{{INIT_DATE}}` substitution).
+> Outcome (2026-05-09): shipped as `imp init` CLI command in
+> `Substrate/ProjectInit.cs` with templates in `Substrate/Templates/`.
+> The layout that actually shipped diverges from the one in the
+> spec below — the shipped layout uses `imp/` (gnome territory)
+> + flat `plans/`, `rules/`, `bugs/`, `TODO.md` (human territory)
+> per the partition-trust-model commit on 2026-05-10, rather than
+> the `project/`-rooted `aspirations/` + `plans/active/` +
+> `plans/archive/` layout this spec described. The spec is
+> preserved as historical design intent. For current behaviour,
+> read `CLAUDE.md`'s "Project substrate" section and
+> `imp/_meta/conventions.md`.
+
+Scaffolds a project substrate in the current repo. CLI command,
+not a Claude Code skill — see the
+`imp/learnings/static-vs-synthesis-boundary.md` learning for the
+durable principle, and the "Why this is a CLI command" section
+below for how it applied to this design.
+
+Does not migrate legacy content — that's `/project-migrate`'s
+job (see `plans/project-migrate-phase1.md` and
+`plans/project-migrate-phase2.md`).
 
 ## Purpose
 
@@ -269,7 +291,8 @@ Typical run: ~60ms.
 
 (Decided 2026-05-09; the original spec assumed skill, that was
 wrong — see substrate-notes Q13 and the
-`feedback_skill_vs_imp_boundary` memory.)
+`imp/learnings/static-vs-synthesis-boundary.md` learning which
+captures the durable principle.)
 
 - Init is deterministic file scaffolding from static templates. No
   synthesis, no judgment, no LLM-shaped work.

@@ -1,11 +1,23 @@
 ---
-superseded_by: plans/v2-plan.md
-migration_disposition: superseded
-migrated_at: 2026-05-10
-migrated_via: project-migrate-skill:M-2026-05-10-1855
+kind: plan
+title: Plan to reach v2
+state: shipped
+created: 2026-04-21
+updated: 2026-05-10
+shipped: 2026-05-10
+provenance:
+  source: project-migrate-skill:M-2026-05-10-1855
+  migrated_at: 2026-05-10
 ---
 
 # Plan to reach v2
+
+Outcome: All 7 phases shipped. Instruments (trace.jsonl, transcript.md,
+proof-of-work.json), the `imp` skill, real-contract prompt
+externalization (`Prompts/AzureFoundry.md`), Safety gates
+(`CommandClassifier`, network-egress, doom-loop in `Safety/`),
+self-check, independent closeout reviewer, and the Docker sandbox are
+all present in current code as of 2026-05-10.
 
 ## Premise
 

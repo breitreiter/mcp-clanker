@@ -1,3 +1,11 @@
+---
+superseded_by:
+  - plans/wiki-deprecation.md
+migration_disposition: drop
+migrated_at: 2026-05-10
+migrated_via: project-migrate-skill:M-2026-05-10-1855
+---
+
 # imp wiki — feature plan
 
 > **DEPRECATED 2026-05-10.** `imp wiki` is superseded by the substrate

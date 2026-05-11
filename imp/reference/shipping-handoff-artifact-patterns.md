@@ -1,11 +1,16 @@
 ---
-superseded_by: imp/reference/shipping-handoff-artifact-patterns.md
-migration_disposition: superseded
-migrated_at: 2026-05-10
-migrated_via: project-migrate-skill:M-2026-05-10-1855
+kind: reference
+title: Shipping hand-off artifact patterns — survey (2026-04-21)
+topics: [agent-handoff, contract-shapes, proof-of-work, terminal-states, external-survey]
+created: 2026-04-21
+updated: 2026-05-10
+provenance:
+  source: project-migrate-skill:M-2026-05-10-1855
+  migrated_at: 2026-05-10
+  original_path: project/bucket-a-survey.md
 ---
 
-# Bucket A — Survey of shipping hand-off artifact patterns
+# Shipping hand-off artifact patterns — survey (2026-04-21)
 
 _Snapshot date: 2026-04-21. If redone later, append a new dated section rather than overwriting — the point of this doc is to capture what the field looked like at a moment, not to track a moving target._
 

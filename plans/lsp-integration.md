@@ -1,13 +1,32 @@
 ---
-superseded_by: plans/lsp-integration.md
-migration_disposition: superseded
-migrated_at: 2026-05-10
-migrated_via: project-migrate-skill:M-2026-05-10-1855
+kind: plan
+title: LSP integration for the executor
+state: exploring
+created: 2026-04-22
+updated: 2026-05-01
+provenance:
+  source: project-migrate-skill:M-2026-05-10-1855
+  migrated_at: 2026-05-10
+touches:
+  files:
+    - Tools/
+    - Build/Executor.cs
+    - Build/Worktree.cs
+    - Infrastructure/TraceWriter.cs
+    - Prompts/closeout.md
+  features:
+    - executor-tool-surface
+    - sandbox
 ---
 
-# Research: LSP integration for the executor
+# LSP integration for the executor
 
-Backlogged. Not starting soon. Captured here so it can be picked up cold.
+Outcome: not yet started. Cheap-first-step (Roslyn-only diagnostics,
+host-side, C# only) is the recommended near-term experiment to
+validate the hypothesis before committing to the sandbox refactor.
+
+Backlogged. Not starting soon. Captured here so it can be picked up
+cold.
 
 ## Premise
 

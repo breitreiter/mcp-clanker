@@ -1,3 +1,13 @@
+---
+superseded_by:
+  - plans/project-migrate-phase1.md
+  - plans/project-migrate-phase2.md
+  - skills/project-migrate.md
+migration_disposition: drop
+migrated_at: 2026-05-10
+migrated_via: project-migrate-skill:M-2026-05-10-1855
+---
+
 # `/project-migrate` — Spec
 
 > Takes a clutter directory of mixed-kind legacy markdown docs and

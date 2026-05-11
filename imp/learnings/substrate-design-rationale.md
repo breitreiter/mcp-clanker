@@ -1,17 +1,36 @@
 ---
-superseded_by: imp/learnings/substrate-design-rationale.md
-migration_disposition: superseded
-migrated_at: 2026-05-10
-migrated_via: project-migrate-skill:M-2026-05-10-1855
+kind: learning
+title: Substrate design rationale — origin doc for the project-knowledge system
+created: 2026-04-25
+updated: 2026-05-10
+provenance:
+  source: project-migrate-skill:M-2026-05-10-1855
+  migrated_at: 2026-05-10
+  original_path: project/project-substrate-notes.md
+touches:
+  features:
+    - project-substrate
+    - imp-init
+    - project-migrate
+    - imp-promote
+    - wiki-deprecation
+related:
+  - imp/learnings/static-vs-synthesis-boundary.md
+  - plans/init-seeding.md
+  - plans/project-migrate-phase1.md
+  - plans/project-migrate-phase2.md
+  - plans/wiki-deprecation.md
 ---
 
-# Project substrate — a living project-knowledge system
+# Substrate design rationale
 
-> Working document. Captures the design conversation through
-> 2026-05-09. Implementation surface is hybrid: Claude Code skills
-> orchestrate, imp provides primitives. The existing imp wiki mode
-> (`imp wiki`, see `wiki-plan.md`) is one of those primitives, not
-> the predecessor of this system.
+> Origin doc for the imp project-substrate system. Captures the
+> design conversation through 2026-05-09 that produced the
+> taxonomy, trust model, proposal format, and implementation
+> boundary the substrate now ships with. Specific in-flight work
+> has been distilled into the plans/ and learnings/ entries
+> linked above; this doc preserves the *why* behind those
+> decisions for future readers who need deeper context.
 
 ## The actual problem
 

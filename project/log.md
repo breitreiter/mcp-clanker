@@ -1,3 +1,10 @@
+---
+superseded_by: imp/log.md
+migration_disposition: superseded
+migrated_at: 2026-05-10
+migrated_via: project-migrate-skill:M-2026-05-10-1855
+---
+
 # Substrate log
 
 Append-only chronological record of substrate decisions, sweep

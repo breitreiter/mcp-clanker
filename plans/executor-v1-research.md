@@ -1,11 +1,36 @@
 ---
-superseded_by: plans/executor-v1-research.md
-migration_disposition: superseded
-migrated_at: 2026-05-10
-migrated_via: project-migrate-skill:M-2026-05-10-1855
+kind: plan
+title: "Research: shape of the build executor (v1)"
+state: shipped
+created: 2026-04-21
+updated: 2026-05-01
+shipped: 2026-05-01
+provenance:
+  source: project-migrate-skill:M-2026-05-10-1855
+  migrated_at: 2026-05-10
+touches:
+  files:
+    - Build/Executor.cs
+    - Build/LifecycleCommands.cs
+    - Tools/Toolbox.cs
+    - Safety/CommandClassifier.cs
+  features:
+    - build-executor
+    - worktree-lifecycle
+    - safety-gates
+    - doom-loop-detector
+    - proof-of-work
 ---
 
 # Research: shape of the build executor (v1)
+
+Outcome (2026-05-10): shipped. The v1 executor exists at
+`Build/Executor.cs`, the tool set described here is realized in
+`Tools/`, the worktree-per-contract lifecycle is in
+`Build/LifecycleCommands.cs`, and the safety gates landed in `Safety/`.
+v2 has since shipped on top of this foundation (see `plans/` /
+`project/v2-plan.md`). Retained as the design record for v1 — useful
+for understanding "why these specific shapes" when reading the code.
 
 Nail down the shape of `build(contractPath)` before writing it, so v1 is
 something we can measure against rather than something we iterate fixes
@@ -22,7 +47,7 @@ calls in the last response, tool-call budget hit, or tool-failure budget
 hit. We copy this shape verbatim and strip nb's interactive approval
 and history-compaction for v1.
 
-Key pointers: `/home/joseph/repos/nb/ConversationManager.cs:116–692`.
+Key pointers: `ConversationManager.cs:116–692` in the nb repo.
 
 **Tools are just `AIFunctionFactory.Create(delegate, name, description)`.**
 The delegate's parameter names + types become the JSON schema the model

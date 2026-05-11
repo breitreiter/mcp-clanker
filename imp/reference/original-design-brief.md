@@ -1,24 +1,33 @@
 ---
-superseded_by: imp/reference/original-design-brief.md
-migration_disposition: superseded
-migrated_at: 2026-05-10
-migrated_via: project-migrate-skill:M-2026-05-10-1855
+kind: reference
+title: Original imp design brief (seed doc, nb-build era)
+created: 2026-04-21
+updated: 2026-05-10
+provenance:
+  source: project-migrate-skill:M-2026-05-10-1855
+  migrated_at: 2026-05-10
+  migrated_from: project/BRIEF.md
+topics: [architecture, history, contract-format, proof-of-work, state-machine, sub-agents]
+touches: []
 ---
 
-# imp: design doc (original seed)
+# Original imp design brief (seed doc, nb-build era)
 
-> **⚠ Stale (2026-05-01).** This is the original seed doc — written when
-> the project was going to be called `nb-build`, layer on top of `nb`,
-> and expose itself to Claude Code as `nb-mcp` over stdio MCP. The
+> **Archival note (migrated 2026-05-10).** This is the original seed
+> design doc, preserved for historical context. It was written when the
+> project was going to be called `nb-build`, layer on top of `nb`, and
+> expose itself to Claude Code as `nb-mcp` over stdio MCP. The
 > high-level framing — the cost model, the contract artifact, the
 > proof-of-work artifact, the build state machine, the sub-agent design
-> — all still apply. The implementation details have moved on:
-> imp grew its own executor instead of wrapping nb's, the MCP layer was
-> replaced with a bash CLI invoked via a skill, and the cheap executor
-> is now Azure GPT-5.1-codex-mini (not "GPT-54"). For current
-> architecture see `CLAUDE.md` and `docs/architecture.md`; for the
-> rewrite history see `cli-plan.md`. Sections describing nb-mcp, the
-> MCP tool surface, and "reuse from nb" are kept as historical context.
+> — all still apply and are still cited from `CLAUDE.md`. The
+> implementation details have moved on: imp grew its own executor
+> instead of wrapping nb's, the MCP layer was replaced with a bash CLI
+> invoked via a skill, and the cheap executor is now Azure
+> GPT-5.1-codex-mini (not "GPT-54"). For current architecture see
+> `CLAUDE.md`; for the rewrite history see
+> `imp/learnings/mcp-to-cli-rewrite.md`. Sections describing nb-mcp,
+> the MCP tool surface, and "reuse from nb" are kept as historical
+> context.
 
 A structured work-execution system. Turns an Opus/Claude Code planning
 session into a queue of contracts that a cheap, slow model (originally

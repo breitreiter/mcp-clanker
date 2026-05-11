@@ -1,11 +1,28 @@
 ---
-superseded_by: plans/cli-plan.md
-migration_disposition: superseded
-migrated_at: 2026-05-10
-migrated_via: project-migrate-skill:M-2026-05-10-1855
+kind: plan
+title: Redesign imp as a CLI tool
+state: shipped
+created: 2026-04-23
+updated: 2026-05-01
+shipped: 2026-05-01
+touches:
+  files: [Program.cs, skills/imp.md]
+  features: [host-shape, cli, mcp-removal]
+provenance:
+  source: project-migrate-skill:M-2026-05-10-1855
+  migrated_at: 2026-05-10
+related:
+  - imp/learnings/mcp-to-cli-rewrite.md
 ---
 
-# Plan to redesign imp as a CLI tool
+# Redesign imp as a CLI tool
+
+Outcome (2026-05-10): Shipped. Phases 1-4 complete — imp runs as a CLI
+invoked from Claude Code via Bash + `skills/imp.md`. MCP layer removed.
+`imp build`, `imp validate`, `imp review`, `imp ping`, `imp template`,
+`imp list`, `imp show`, `imp log` are all live subcommands. Phase 5
+(self-contained binary distribution) deferred. See
+`imp/learnings/mcp-to-cli-rewrite.md` for the why.
 
 ## Premise
 

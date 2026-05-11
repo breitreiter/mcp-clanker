@@ -1,15 +1,23 @@
 ---
-superseded_by: plans/spec-kit-integration.md
-migration_disposition: superseded
-migrated_at: 2026-05-10
-migrated_via: project-migrate-skill:M-2026-05-10-1855
+kind: plan
+title: Integrating with GitHub Spec Kit
+state: exploring
+created: 2026-04-25
+updated: 2026-05-10
+provenance:
+  source: project-migrate-skill:M-2026-05-10-1855
+  migrated_at: 2026-05-10
 ---
 
 # Integrating with GitHub Spec Kit
 
-An exploratory doc — not a plan. Premise: *if* we adopt Spec Kit
-(`github/spec-kit`) as the higher-level orchestration layer, what does
-imp's role look like, and what would we change?
+Outcome: not committed. Doc nominated phase 2 of v2-plan as the
+revisit point; v2 phase 2 is now shipped per substrate, but no
+commit-or-shelve decision has been recorded. Option is still live.
+
+Exploratory: *if* we adopt Spec Kit (`github/spec-kit`) as the
+higher-level orchestration layer, what does imp's role look like,
+and what would we change?
 
 ## Why this pairing is plausible
 

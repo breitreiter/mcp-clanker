@@ -1,11 +1,18 @@
 ---
-superseded_by: plans/v3-plan.md
-migration_disposition: superseded
-migrated_at: 2026-05-10
-migrated_via: project-migrate-skill:M-2026-05-10-1855
+kind: plan
+title: Plan to reach v3
+state: exploring
+created: 2026-04-25
+updated: 2026-05-10
+provenance:
+  source: project-migrate-skill:M-2026-05-10-1855
+  migrated_at: 2026-05-10
 ---
 
 # Plan to reach v3
+
+Outcome: not started. Phase 1 is gated on a v2-trace review
+(see "Honesty check" below) that hasn't happened yet.
 
 ## Premise
 
@@ -125,9 +132,12 @@ the session budget belongs elsewhere.
 
 ## See also
 
-- `v2-plan.md` — v3 depends on v2's instruments for its honesty
-  check; the data we need to justify v3 is produced by v2 runs
+- `plans/v2-plan.md` — v3 depends on v2's instruments for its
+  honesty check; the data we need to justify v3 is produced by
+  v2 runs
 - `TODO.md` — v1 and v2-deferred items; v3 work items land here
   only after the pre-phase-1 review
-- `BRIEF.md` — original framing; LSP tools are a v3 addition,
-  not anticipated in the initial scope
+- `project/BRIEF.md` — original framing; LSP tools are a v3
+  addition, not anticipated in the initial scope
+- `project/lsp-integration-research.md` (migrating in parallel) —
+  research notes feeding the phase-1 server choice

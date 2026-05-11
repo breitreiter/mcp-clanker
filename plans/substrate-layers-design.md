@@ -1,11 +1,21 @@
 ---
-superseded_by: plans/substrate-layers-design.md
-migration_disposition: superseded
-migrated_at: 2026-05-10
-migrated_via: project-migrate-skill:M-2026-05-10-1855
+kind: plan
+title: Substrate layers — design snapshot
+state: shipped
+created: 2026-05-09
+updated: 2026-05-10
+shipped: 2026-05-10
+provenance:
+  source: project-migrate-skill:M-2026-05-10-1855
+  migrated_at: 2026-05-10
 ---
 
 # Substrate layers — design snapshot
+
+Outcome: model has been substantially instantiated as of 2026-05-10
+— `imp init` seeds the layout, `imp tidy` v0b ships, `imp note`
+exists, gnome/proposal trust boundary is live. Open questions
+section below remains active design surface.
 
 State of the design as of 2026-05-10. Captures decisions from the
 wiki/substrate architecture conversation. Open questions flagged

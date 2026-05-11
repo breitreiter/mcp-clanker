@@ -1,18 +1,24 @@
 ---
-superseded_by: plans/imp-health.md
-migration_disposition: superseded
-migrated_at: 2026-05-10
-migrated_via: project-migrate-skill:M-2026-05-10-1855
+kind: plan
+title: imp health — codebase vibe check from CI output
+state: exploring
+created: 2026-05-10
+updated: 2026-05-10
+provenance:
+  source: project-migrate-skill:M-2026-05-10-1855
+  migrated_at: 2026-05-10
 ---
 
-# `imp health` — feature idea
+# imp health — codebase vibe check from CI output
+
+Outcome: not started — feature idea captured 2026-05-10, no code
+yet, open questions still unresolved on scheduling, output target,
+tidy-integration, and provider choice.
 
 > Periodic "vibe check" on codebase health. Imp consumes structured
 > output from existing tooling (build logs, static-analysis reports,
 > nightly test runs) and produces a one-paragraph judgment on
 > direction: is tech debt getting better or worse, and roughly where?
->
-> Status: idea only, not yet planned.
 
 ## What it does
 

@@ -1,15 +1,34 @@
 ---
-superseded_by: plans/research-mode.md
-migration_disposition: superseded
-migrated_at: 2026-05-10
-migrated_via: project-migrate-skill:M-2026-05-10-1855
+kind: plan
+title: imp research mode
+state: shipped
+created: 2026-04-26
+updated: 2026-05-10
+shipped: 2026-05-10
+provenance:
+  source: project-migrate-skill:M-2026-05-10-1855
+  migrated_at: 2026-05-10
+touches:
+  files:
+    - Research/Brief.cs
+    - Research/Modes.cs
+    - Research/ResearchArchive.cs
+    - Research/ResearchExecutor.cs
+    - Research/ResearchReport.cs
+    - Research/ResearchRunner.cs
+    - Research/ResearchTools.cs
+  features:
+    - imp research (CLI subcommand)
 ---
 
-# imp research mode — feature plan
+# imp research mode
 
-> Status: design sketch (2026-05-04). Not implemented. Needs review,
-> then a slimmed phase-1 to land FS mode end-to-end before web mode
-> or the pluggability surface ships.
+Outcome: shipped. Phases 1–6 of the build order are live under
+`Research/` (FS mode, archive, CLI + brief parser, web mode). Later
+items remain unbuilt and are tracked at the bottom of this plan:
+`--schema` flag, `--verify` closeout pass, `--check-prior` similarity
+lookup, canary tools, assembly-discovery plugins, caller-side budget
+caps.
 
 A second top-level command alongside `imp build`. Hands a question
 (or a structured brief) to a cheap executor running with a curated
@@ -22,7 +41,7 @@ over-reads when authoring contracts. A research mode is the other
 half of that fix — give the parent a cheap way to delegate the
 research grind, not just the implementation grind.
 
-### Where this design sits in the field
+## Where this design sits in the field
 
 Three live citation conventions in shipping research APIs as of
 May 2026, with no convergence:
@@ -612,7 +631,7 @@ only field is Question.
    `ToolReach`, `SandboxProfile`, `ModeDefinition`,
    `TaskDescriptor`. No behavior change yet — existing build code
    keeps using `Tools.Create` directly. The registry is additive
-   scaffolding.
+   scaffolding. *(shipped — Research/Modes.cs)*
 2. **FS mode end-to-end.** Reuses `CreateReadOnly` (rebadged as
    registry entries), runs against main checkout, finish tool
    emits the report shape above with mandatory citations + excerpts
@@ -620,17 +639,21 @@ only field is Question.
    `blocked_questions[]` + `usage` block. Citation kind `file`
    carries `{path, line_start, line_end, excerpts[], git_sha}`
    (with dirty flag when the worktree has uncommitted changes).
-   Lowest risk because every part exists.
+   Lowest risk because every part exists. *(shipped —
+   Research/ResearchExecutor.cs, Research/ResearchTools.cs,
+   Research/ResearchReport.cs)*
 3. **Archive + report renderer.** `<repo>.researches/R-NNN-<slug>/`
    layout: `brief.md`, `report.json`, `findings.jsonl`,
    `transcript.md`, `trace.jsonl`, `meta.json`. Reuse
    `TraceWriter` and `TranscriptRenderer`. The greppable archive
    is the answer to "have you researched this before?" — parent
-   does retrieval, imp does write.
+   does retrieval, imp does write. *(shipped —
+   Research/ResearchArchive.cs)*
 4. **`imp research` CLI subcommand + brief parser.** Free-text
    first, then `--brief`. Defer `--schema` until after phase 5
    validation — see what real callers actually want before
-   building the schema-override path.
+   building the schema-override path. *(shipped — Research/Brief.cs,
+   Research/ResearchRunner.cs)*
 5. **Validate phases 1–4 on real questions** before building web
    mode or `--schema`. FS mode alone is already a Sonnet-token
    saver and a good test of whether the report shape is consumable.
@@ -642,14 +665,15 @@ only field is Question.
    first-class swap). Per-run `max_searches` budget enforced at
    the sandbox-profile level. Search-result snippets are
    explicitly not citations — the executor must `http_get` and
-   excerpt before claiming a finding.
+   excerpt before claiming a finding. *(shipped)*
 7. **`--schema` flag.** Caller-supplied JSON Schema overrides the
    default report shape; per-field basis attaches to caller-defined
    fields. Tavily / Exa / Parallel pattern. Gate on phase 5
    feedback — only build if there's a concrete caller need.
+   *(unbuilt — gated on caller demand)*
 8. **Pluggability docs.** `docs/modes.md` showing how to register
    a third mode in a fork, using OLAP/Lucene/graph as worked
-   examples.
+   examples. *(unbuilt)*
 9. *(later)* `--verify` flag for closeout-style finding
    falsification (Anthropic's `CitationAgent` post-pass pattern).
 10. *(later)* `imp research --check-prior <brief>` — advisory
