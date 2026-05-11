@@ -74,6 +74,8 @@ Walk these dirs and collect frontmatter blocks (NOT bodies):
 
 - `imp/learnings/*.md`
 - `imp/reference/*.md`
+- `imp/concepts/*.md` (auto-generated narrative views; can grow
+  to overlap migration targets even if empty at init)
 - `rules/*.md`
 - `plans/*.md`
 - `bugs/*.md`
@@ -107,15 +109,34 @@ For each doc in the plan that the user approved:
    re-runs idempotent.
 2. **Pre-compute proposal_id**: find the max existing
    `<proposals-dir>/P-<today>-*.md` sequence number and add 1
-   (zero-padded to 3 digits). Use it in the subagent prompt.
-3. **Spawn subagent**: use the Task tool with
-   `subagent_type: general-purpose`. Prompt template below
-   ("Subagent prompt"). Pass:
+   (zero-padded to 3 digits). `<today>` is UTC date
+   (`YYYY-MM-DD`), matching `migration_id` convention. The
+   `P-<today>-NNN` sequence is shared across all proposals
+   written today regardless of suffix (`migrate-<slug>`,
+   `migration-cleanup`, anything else) — re-scan max-of-existing
+   immediately before each allocation rather than caching a
+   counter, so a per-doc proposal added between steps doesn't
+   collide with the cleanup proposal at end of run.
+   Use the resulting id in the subagent prompt.
+3. **Spawn subagent (or fall back inline)**: prefer the Agent
+   tool (Claude Code's agent-spawn tool — NOT TaskCreate, which
+   manages todos) with `subagent_type: general-purpose`, using
+   the prompt template below ("Subagent prompt"). Pass:
    - The doc's full content (read inline)
    - The doc's record from plan.json (path, shape, sniff_reason,
      signals)
    - The substrate-context blob from step 2
    - The pre-computed `proposal_id` and `migration_id`
+
+   **If the Agent tool is not available** (e.g., this skill is
+   itself running inside a subagent, or a restricted-tool flow),
+   degrade gracefully: do the classification work inline, applying
+   the subagent prompt as your own internal instructions.
+   Surface this to the user once at the start of the loop —
+   "Agent tool unavailable; running inline. Parent context will
+   accumulate doc bodies; budget accordingly." Inline runs are
+   functionally equivalent but defeat the context-isolation that
+   subagent dispatch was meant to provide.
 4. **Receive drafted proposal markdown** as the subagent's
    return value. Validate it has frontmatter + Rationale +
    Proposed changes + Preview sections.
@@ -136,7 +157,9 @@ For each doc in the plan that the user approved:
 ### 5. Cleanup proposal
 
 After per-doc processing, draft a single cleanup proposal at
-`<proposals-dir>/P-<date>-<NNN>-migration-cleanup.md` covering:
+`<proposals-dir>/<cleanup_proposal_id>-migration-cleanup.md` (use
+the same ID-allocation scheme as per-doc proposals: pre-compute
+`P-<today>-<NNN>` from max-of-existing+1) covering:
 
 - Every doc with `kind: drop` from this run, with the per-doc
   drop rationale inlined.
@@ -150,6 +173,12 @@ After per-doc processing, draft a single cleanup proposal at
 
 This step runs inline (no subagent) — it's aggregation work the
 parent's context already has.
+
+**Always emit the cleanup proposal, even on single-doc runs.** It
+carries the supersession `set_frontmatter` markers for migrated
+legacy files; skipping it leaves orphan source docs with no
+pointer to their substrate destinations. The cleanup proposal can
+be small (one entry, no drops) and still earn its keep.
 
 ### 6. Hand off to /imp-promote
 
@@ -181,9 +210,15 @@ The subagent must classify each doc (or section) as one of:
   primarily archive external material.
 - **`drop`** — Don't migrate. Used for stale, superseded, or
   meta-content (e.g., a TODO that's been resolved elsewhere).
-  Goes into the cleanup proposal, not its own file.
-- **`defer`** — Subagent isn't confident. Surface to human in the
-  cleanup proposal; no proposal drafted.
+  Per-doc proposal still gets written (with `category: migration`
+  and a `set_frontmatter` change adding a `superseded_by` /
+  `migration_disposition: drop` marker on the legacy file); the
+  cleanup proposal at end aggregates all drops with their
+  rationales for batch review.
+- **`defer`** — Subagent isn't confident. Per-doc proposal is
+  written with `category: migration_defer` and no changes block —
+  just the rationale. The cleanup proposal lists deferrals for
+  visibility.
 
 There is intentionally no `aspiration` kind in v0.2 — keep the
 kind set minimal until the substrate has aspirations defined.
@@ -211,7 +246,11 @@ catches the rest.
 
 ## Proposal format
 
-Must match `project/project-promote-spec.md`. Concretely:
+Must match `project/project-promote-spec.md` — read it for the
+authoritative `## Proposed changes` verb vocabulary
+(`create | move | delete | append | set_frontmatter`) and the
+auto-approval tier inference rules. The shape used by migration
+proposals is:
 
 ```markdown
 ---
@@ -334,8 +373,12 @@ The Task subagent gets this prompt (adapt the variables in
 >
 > ### Output
 >
-> A single proposal markdown block matching this shape (or just
-> `DROP: <reason>` / `DEFER: <reason>` if those apply):
+> A single proposal markdown block matching this shape. For
+> `kind: drop`, omit the `Preview` section and use only a
+> `set_frontmatter` change adding `migration_disposition: drop`
+> to the legacy file. For `kind: defer`, omit both the changes
+> block and the preview; just emit frontmatter + Rationale (the
+> parent's cleanup proposal aggregates these for human review).
 >
 > ```markdown
 > ---
@@ -397,10 +440,20 @@ The Task subagent gets this prompt (adapt the variables in
 >   correct dir per kind).
 > - Don't fabricate touches.files — only include files you can
 >   verify exist via the signals or substrate context.
+> - The Phase 1 `proposed_action` (`split-and-classify`,
+>   `migrate-to-plans`, etc.) is a *hint*, not a directive — feel
+>   free to override it with rationale (e.g., a doc Phase 1
+>   flagged as `split-and-classify` may turn out to be one
+>   coherent topic and migrate as a single entry).
 > - For `mixed`-shape docs (per Phase 1 sniff), if the doc has
 >   sections that classify as different kinds, output multiple
 >   `create` changes (one preview per resulting entry) and explain
->   the split in the Rationale.
+>   the split in the Rationale. **Splitting-aggression rule:**
+>   prefer one entry per coherent topic, not one entry per H2.
+>   Per-H2 splits are usually too fine-grained — H2 sections of a
+>   single design doc almost always belong together. Split only
+>   when sections clearly classify as different *kinds* (e.g., a
+>   "Rules" section and a "TODOs" section in the same doc).
 > - Citations in the Rationale should reference signals or
 >   substrate entries by name, not invent facts.
 
