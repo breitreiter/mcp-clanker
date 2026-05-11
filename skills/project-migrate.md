@@ -127,6 +127,13 @@ For each doc in the plan that the user approved:
      signals)
    - The substrate-context blob from step 2
    - The pre-computed `proposal_id` and `migration_id`
+   - **The target proposal file path** —
+     `<proposals-dir>/<proposal_id>-migrate-<slug>.md`. The
+     subagent writes the proposal file directly via its Write
+     tool. The parent does NOT relay the proposal markdown
+     through its own context — preview bodies can be 10-30KB,
+     and routing them through the parent is both wasteful AND
+     prone to silent truncation (verified failure mode, 2026-05-10).
 
    **If the Agent tool is not available** (e.g., this skill is
    itself running inside a subagent, or a restricted-tool flow),
@@ -137,13 +144,18 @@ For each doc in the plan that the user approved:
    accumulate doc bodies; budget accordingly." Inline runs are
    functionally equivalent but defeat the context-isolation that
    subagent dispatch was meant to provide.
-4. **Receive drafted proposal markdown** as the subagent's
-   return value. Validate it has frontmatter + Rationale +
-   Proposed changes + Preview sections.
-5. **Write to disk** at
-   `<proposals-dir>/<proposal_id>-migrate-<slug>.md`.
-6. **Show proposal to user** with the subagent's classification,
-   polish-trap flag if any, and proposal preview.
+4. **Receive summary** from the subagent: classification kind,
+   chosen substrate path/slug, polish-trap flag, and a
+   one-paragraph rationale. The full proposal is already on
+   disk at the path you passed in.
+5. **Read the proposal file** to confirm it exists and is
+   well-formed (frontmatter + Rationale + Proposed changes +
+   Preview sections). If malformed, re-prompt the subagent
+   once with the validation error.
+6. **Show summary + proposal preview to user** — the subagent's
+   one-paragraph rationale, classification, polish-trap flag,
+   plus a `head -40` of the proposal file is enough; the user
+   can read the full file at the path if they want detail.
 7. **Pause for review**. User responses:
    - "next" / "ok" / "continue" → proceed to next doc
    - "skip" → delete the just-written proposal, move on
@@ -373,12 +385,27 @@ The Task subagent gets this prompt (adapt the variables in
 >
 > ### Output
 >
-> A single proposal markdown block matching this shape. For
-> `kind: drop`, omit the `Preview` section and use only a
-> `set_frontmatter` change adding `migration_disposition: drop`
-> to the legacy file. For `kind: defer`, omit both the changes
-> block and the preview; just emit frontmatter + Rationale (the
-> parent's cleanup proposal aggregates these for human review).
+> 1. **Use the Write tool** to save the full proposal markdown to
+>    the path the parent passed in (`{{proposal_path}}`). The
+>    proposal must contain frontmatter + Rationale + Proposed
+>    changes + Preview (per the format below). Don't return the
+>    proposal markdown in your response — it's on disk now.
+> 2. **Return only a brief summary** to the parent in this exact
+>    shape:
+>
+>    ```
+>    KIND: <rule|learning|plan|reference|drop|defer>
+>    SLUG: <kebab-case-slug-of-the-substrate-entry-or-N/A>
+>    POLISH_TRAP: <true|false>
+>    RATIONALE: <one paragraph, ≤200 words, citing the load-bearing signals>
+>    ```
+>
+> For `kind: drop`, the proposal omits the `Preview` section and
+> uses only a `set_frontmatter` change adding
+> `migration_disposition: drop` to the legacy file. For
+> `kind: defer`, the proposal omits both the changes block and
+> the preview; just frontmatter + Rationale (the parent's cleanup
+> proposal aggregates these for human review).
 >
 > ```markdown
 > ---
