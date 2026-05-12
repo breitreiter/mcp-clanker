@@ -17,7 +17,10 @@ namespace Imp.Infrastructure;
 //   Model:                  served model name; llama.cpp typically ignores
 //                           this and uses whatever's loaded, but the SDK
 //                           requires the field
-//   NetworkTimeoutSeconds:  optional, default 60s
+//   NetworkTimeoutSeconds:  optional, default 600s — generous because
+//                           a single-GPU local server processes batch
+//                           requests sequentially (a refresh batching
+//                           dozens of entries can take a minute or two)
 public static class Embeddings
 {
     public static EmbeddingClient Create(IConfiguration root)
@@ -27,7 +30,7 @@ public static class Embeddings
         var apiKey = Required(section, "ApiKey");
         var model = Required(section, "Model");
 
-        var timeoutSeconds = int.TryParse(section["NetworkTimeoutSeconds"], out var t) && t > 0 ? t : 60;
+        var timeoutSeconds = int.TryParse(section["NetworkTimeoutSeconds"], out var t) && t > 0 ? t : 600;
 
         var options = new OpenAIClientOptions
         {

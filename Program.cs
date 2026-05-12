@@ -52,6 +52,7 @@ public class Program
             "migrate" => Migrate.Run(args[1..]),
             "note" => Note.Run(args[1..]),
             "tidy" => await RunTidy(args[1..]),
+            "embed-refresh" => await RunEmbedRefresh(args[1..]),
             "wiki" => await RunWiki(args[1..]),
             "wiki-render-test" => RunWikiRenderTest(args[1..]),
             "wiki-index-test" => RunWikiIndexTest(args[1..]),
@@ -138,6 +139,15 @@ Substrate:
                                      draft LLM phases. Cross-boundary
                                      suggestions deferred. --dry-run shows
                                      what would happen without writing.
+  embed-refresh                      Scan the substrate (imp/learnings,
+                                     imp/reference, plans, rules) and
+                                     refresh the embeddings cache at
+                                     .imp/embeddings.jsonl: embed new and
+                                     content-changed entries, prune
+                                     orphans, leave unchanged entries
+                                     alone. Tidy will call this internally
+                                     once phase 2 lands; this command is
+                                     for development and inspection.
 
 Inspection:
   list                                List contracts under ./contracts/*.md (JSON).
@@ -694,6 +704,49 @@ build / validate / list / show / log / review.
 
         Console.WriteLine(r2.Text);
         return 0;
+    }
+
+    // Scan the substrate and refresh the embeddings cache. Idempotent:
+    // unchanged entries are kept as-is, changed entries are re-embedded,
+    // new entries are added, and orphaned cache rows (file no longer
+    // exists) are dropped. Fail-closed on unreachable embedding provider
+    // per rules/embedding-provider.md.
+    static async Task<int> RunEmbedRefresh(string[] args)
+    {
+        var cwd = Directory.GetCurrentDirectory();
+        var repoRoot = FindRepoRoot(cwd);
+        if (repoRoot is null)
+        {
+            Console.Error.WriteLine($"imp embed-refresh: not in a git repo: {cwd}");
+            return 1;
+        }
+
+        var config = BuildConfiguration();
+        var modelId = config["EmbeddingProvider:Model"] ?? "unknown";
+        var endpoint = config["EmbeddingProvider:Endpoint"] ?? "<unset>";
+        Console.Error.WriteLine($"[embed-refresh] repo={repoRoot} endpoint={endpoint} model={modelId}");
+
+        var client = Embeddings.Create(config);
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var stats = await EmbeddingIndex.RefreshAsync(client, repoRoot, modelId);
+        sw.Stop();
+
+        Console.WriteLine($"refresh: added={stats.Added} updated={stats.Updated} removed={stats.Removed} unchanged={stats.Unchanged} total={stats.Total} elapsed={sw.ElapsedMilliseconds}ms");
+        return 0;
+    }
+
+    static string? FindRepoRoot(string startDir)
+    {
+        var dir = new DirectoryInfo(System.IO.Path.GetFullPath(startDir));
+        while (dir is not null)
+        {
+            if (Directory.Exists(System.IO.Path.Combine(dir.FullName, ".git"))
+                || File.Exists(System.IO.Path.Combine(dir.FullName, ".git")))
+                return dir.FullName;
+            dir = dir.Parent;
+        }
+        return null;
     }
 
     // Smoke-test the embedding provider. Embeds a short string against
