@@ -4,6 +4,8 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Imp.Infrastructure;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
+using OpenAI.Embeddings;
 
 namespace Imp.Substrate;
 
@@ -37,7 +39,7 @@ public static class Tidy
     const string ImpGnomeAuthorName = "imp-gnome";
     const string ImpGnomeAuthorEmail = "noreply@imp.local";
 
-    public static async Task<int> RunAsync(IChatClient chat, string[] args)
+    public static async Task<int> RunAsync(IChatClient chat, IConfiguration config, string[] args)
     {
         bool dryRun = false;
         foreach (var a in args)
@@ -59,6 +61,37 @@ public static class Tidy
             return 1;
         }
 
+        var triagePromptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "tidy-triage.md");
+        var draftPromptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "tidy-draft.md");
+        var proposalPromptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "tidy-proposal.md");
+        var locatePromptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "tidy-locate.md");
+        if (!File.Exists(triagePromptPath) || !File.Exists(draftPromptPath)
+            || !File.Exists(proposalPromptPath) || !File.Exists(locatePromptPath))
+        {
+            Console.Error.WriteLine($"imp tidy: prompt files not found at {Path.GetDirectoryName(triagePromptPath)}");
+            return 2;
+        }
+        var triageSystemPrompt = await File.ReadAllTextAsync(triagePromptPath);
+        var draftSystemPrompt = await File.ReadAllTextAsync(draftPromptPath);
+        var proposalSystemPrompt = await File.ReadAllTextAsync(proposalPromptPath);
+        var locateSystemPrompt = await File.ReadAllTextAsync(locatePromptPath);
+
+        // Refresh the embeddings cache before processing notes. Always run
+        // — even on empty inbox — so substrate-only edits between tidy
+        // runs (people fixing typos, marking plans shipped) keep the
+        // cache aligned. Fail-closed if EmbeddingProvider is unreachable
+        // per rules/embedding-provider.md.
+        var embed = Embeddings.Create(config);
+        var modelId = config["EmbeddingProvider:Model"] ?? "unknown";
+        Console.WriteLine("imp tidy: refreshing embeddings cache…");
+        var refreshSw = Stopwatch.StartNew();
+        var refreshStats = await EmbeddingIndex.RefreshAsync(embed, repoRoot, modelId);
+        refreshSw.Stop();
+        Console.WriteLine(
+            $"  embeddings: added={refreshStats.Added} updated={refreshStats.Updated} " +
+            $"removed={refreshStats.Removed} unchanged={refreshStats.Unchanged} " +
+            $"({refreshSw.ElapsedMilliseconds}ms)");
+
         var inbox = Path.Combine(substrateDir, "note", "inbox");
         var notes = Directory.Exists(inbox)
             ? Directory.EnumerateFiles(inbox, "*.md", SearchOption.TopDirectoryOnly)
@@ -73,18 +106,6 @@ public static class Tidy
         }
 
         Console.WriteLine($"imp tidy: {notes.Count} note(s) pending{(dryRun ? " (dry run)" : "")}.");
-
-        var triagePromptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "tidy-triage.md");
-        var draftPromptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "tidy-draft.md");
-        var proposalPromptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "tidy-proposal.md");
-        if (!File.Exists(triagePromptPath) || !File.Exists(draftPromptPath) || !File.Exists(proposalPromptPath))
-        {
-            Console.Error.WriteLine($"imp tidy: prompt files not found at {Path.GetDirectoryName(triagePromptPath)}");
-            return 2;
-        }
-        var triageSystemPrompt = await File.ReadAllTextAsync(triagePromptPath);
-        var draftSystemPrompt = await File.ReadAllTextAsync(draftPromptPath);
-        var proposalSystemPrompt = await File.ReadAllTextAsync(proposalPromptPath);
 
         var proposalsDir = ResolveProposalsDir(repoRoot);
 
@@ -121,8 +142,8 @@ public static class Tidy
                     case "learning":
                     case "reference":
                         await HandleEntryAsync(
-                            chat, draftSystemPrompt,
-                            substrateDir, notePath, noteName,
+                            chat, embed, draftSystemPrompt, locateSystemPrompt,
+                            repoRoot, substrateDir, notePath, noteName,
                             body, frontmatter, triage, dryRun, stats);
                         break;
 
@@ -329,11 +350,42 @@ public static class Tidy
     // ── phase 6: apply ────────────────────────────────────────────
 
     static async Task HandleEntryAsync(
-        IChatClient chat, string draftPrompt,
-        string substrateDir, string notePath, string noteName,
+        IChatClient chat, EmbeddingClient embed,
+        string draftPrompt, string locatePrompt,
+        string repoRoot, string substrateDir, string notePath, string noteName,
         string body, IReadOnlyDictionary<string, string> frontmatter,
         TriageResult triage, bool dryRun, RunStats stats)
     {
+        // Phase 2: locate. Decide create-new vs update-which. For this
+        // iteration the update path isn't wired yet — when locate says
+        // update we log the intent and fall through to create. Once the
+        // patch-draft prompt lands this branch routes to it.
+        try
+        {
+            var located = await Locate.LocateAsync(
+                chat, embed, repoRoot,
+                triage.Classification, triage.Title, body, locatePrompt);
+            Console.WriteLine($"      locate: {located.Decision}" +
+                (located.TargetPath is not null ? $" → {located.TargetPath}" : "") +
+                $"  ({located.Candidates.Count} cand)");
+            if (located.Candidates.Count > 0)
+            {
+                var top = located.Candidates[0];
+                Console.WriteLine($"        top candidate: {top.Entry.Path} (sim={top.Similarity:F4})");
+            }
+            if (string.Equals(located.Decision, "update", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine($"      note: update path not yet wired — proceeding with create");
+            }
+        }
+        catch (Exception ex)
+        {
+            // Locate is observational for this iteration; if it fails we
+            // still want the rest of tidy to make progress.
+            ImpLog.Warn($"tidy.locate: {ex.GetType().Name}: {ex.Message}");
+            Console.WriteLine($"      locate: failed ({ex.GetType().Name}); proceeding with create");
+        }
+
         var bodyMarkdown = await DraftBodyAsync(chat, draftPrompt, body, frontmatter, triage);
         if (string.IsNullOrWhiteSpace(bodyMarkdown))
         {

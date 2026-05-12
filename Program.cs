@@ -277,7 +277,7 @@ build / validate / list / show / log / review.
         var config = BuildConfiguration();
         var chat = Providers.Create(config);
         Console.Error.WriteLine($"[imp] tidy start: provider={config["ActiveProvider"]} cwd={Directory.GetCurrentDirectory()}");
-        return await Tidy.RunAsync(chat, args);
+        return await Tidy.RunAsync(chat, config, args);
     }
 
     static async Task<int> RunWiki(string[] args)
