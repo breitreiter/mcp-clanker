@@ -53,6 +53,7 @@ public class Program
             "note" => Note.Run(args[1..]),
             "tidy" => await RunTidy(args[1..]),
             "embed-refresh" => await RunEmbedRefresh(args[1..]),
+            "locate" => await RunLocate(args[1..]),
             "wiki" => await RunWiki(args[1..]),
             "wiki-render-test" => RunWikiRenderTest(args[1..]),
             "wiki-index-test" => RunWikiIndexTest(args[1..]),
@@ -148,6 +149,16 @@ Substrate:
                                      alone. Tidy will call this internally
                                      once phase 2 lands; this command is
                                      for development and inspection.
+  locate <kind> [--title T] <body>   Test the locate step: embed the given
+                                     text, rank top-K cached entries of
+                                     the matching kind, ask the chat
+                                     provider for a create/update decision.
+                                     Prints candidates to stderr and the
+                                     decision JSON to stdout. Useful for
+                                     iterating on the locate prompt
+                                     without driving through a full tidy
+                                     run. Kinds: learning, reference,
+                                     rule, plan (or *-suggestion variants).
 
 Inspection:
   list                                List contracts under ./contracts/*.md (JSON).
@@ -703,6 +714,77 @@ build / validate / list / show / log / review.
         DescribeResponse("r2", r2);
 
         Console.WriteLine(r2.Text);
+        return 0;
+    }
+
+    // Test the locate step end-to-end on the live substrate cache.
+    // Embeds the supplied note text, ranks top-K cached entries of the
+    // matching kind, and asks the chat provider whether to create-new
+    // or update-which. Prints the ranking to stderr (for inspection)
+    // and the decision JSON to stdout.
+    static async Task<int> RunLocate(string[] args)
+    {
+        string? kind = null;
+        string? title = null;
+        var bodyParts = new List<string>();
+        for (int i = 0; i < args.Length; i++)
+        {
+            var a = args[i];
+            if (a == "--title" && i + 1 < args.Length) { title = args[++i]; continue; }
+            if (a.StartsWith("--title=", StringComparison.Ordinal)) { title = a["--title=".Length..]; continue; }
+            if (kind is null) { kind = a; continue; }
+            bodyParts.Add(a);
+        }
+
+        if (string.IsNullOrEmpty(kind) || bodyParts.Count == 0)
+        {
+            Console.Error.WriteLine("Usage: imp locate <kind> [--title <title>] <body...>");
+            Console.Error.WriteLine($"       known kinds: {string.Join(", ", EmbeddingIndex.KindToPathPrefix.Keys)}");
+            return 1;
+        }
+
+        var body = string.Join(" ", bodyParts);
+        title ??= body.Length > 60 ? body[..60] + "…" : body;
+
+        var cwd = Directory.GetCurrentDirectory();
+        var repoRoot = FindRepoRoot(cwd);
+        if (repoRoot is null)
+        {
+            Console.Error.WriteLine($"imp locate: not in a git repo: {cwd}");
+            return 1;
+        }
+
+        var config = BuildConfiguration();
+        var chat = Providers.Create(config);
+        var embed = Embeddings.Create(config);
+
+        var promptPath = System.IO.Path.Combine(AppContext.BaseDirectory, "Prompts", "tidy-locate.md");
+        if (!File.Exists(promptPath))
+        {
+            Console.Error.WriteLine($"imp locate: prompt not found at {promptPath}");
+            return 2;
+        }
+        var systemPrompt = await File.ReadAllTextAsync(promptPath);
+
+        Console.Error.WriteLine($"[locate] kind={kind} title=\"{title}\" chat-provider={config["ActiveProvider"]}");
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var result = await Locate.LocateAsync(chat, embed, repoRoot, kind, title, body, systemPrompt);
+        sw.Stop();
+
+        Console.Error.WriteLine($"[locate] candidates considered (top-{result.Candidates.Count}):");
+        foreach (var c in result.Candidates)
+            Console.Error.WriteLine($"  {c.Similarity:F4}  {c.Entry.Path}");
+        Console.Error.WriteLine($"[locate] elapsed={sw.ElapsedMilliseconds}ms");
+
+        var output = new
+        {
+            decision = result.Decision,
+            target_path = result.TargetPath,
+            rationale = result.Rationale,
+        };
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(output,
+            new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
         return 0;
     }
 

@@ -29,6 +29,22 @@ public static class EmbeddingIndex
 
     static readonly string[] ScanDirs = ["imp/learnings", "imp/reference", "plans", "rules"];
 
+    // Maps a kind (raw or triage-classification form) to the path prefix
+    // we filter the cache by. Triage classifications include the
+    // "-suggestion" suffix for cross-boundary kinds (rule-suggestion,
+    // plan-suggestion); raw kinds (rule, plan, learning, reference) also
+    // work for callers outside the tidy triage path.
+    public static readonly IReadOnlyDictionary<string, string> KindToPathPrefix =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["learning"] = "imp/learnings/",
+            ["reference"] = "imp/reference/",
+            ["rule"] = "rules/",
+            ["plan"] = "plans/",
+            ["rule-suggestion"] = "rules/",
+            ["plan-suggestion"] = "plans/",
+        };
+
     public sealed record Entry(
         [property: JsonPropertyName("path")] string Path,
         [property: JsonPropertyName("content_hash")] string ContentHash,
@@ -169,6 +185,53 @@ public static class EmbeddingIndex
         int removed = existing.Keys.Count(k => !keep.ContainsKey(k));
         Save(repoRoot, keep.Values);
         return new RefreshStats(added, updated, removed, unchanged);
+    }
+
+    // ── ranking ───────────────────────────────────────────────────
+
+    public sealed record RankedHit(Entry Entry, float Similarity);
+
+    // Rank cached entries against `queryVector` by cosine similarity.
+    // Both sides are unit-normalized (Qwen3-Embedding-8B normalizes
+    // output, and entries came from the same server), so cosine
+    // similarity == dot product — no extra normalization needed.
+    // Filters by kind via KindToPathPrefix; pass kind=null/"" to skip
+    // the filter and rank against every entry.
+    public static List<RankedHit> RankTopK(
+        IReadOnlyDictionary<string, Entry> cache,
+        float[] queryVector,
+        string? kind,
+        int k)
+    {
+        if (queryVector.Length != ExpectedDim)
+            throw new ArgumentException(
+                $"queryVector dim={queryVector.Length}, expected {ExpectedDim}", nameof(queryVector));
+
+        string? prefix = null;
+        if (!string.IsNullOrEmpty(kind))
+        {
+            if (!KindToPathPrefix.TryGetValue(kind, out prefix))
+                throw new ArgumentException(
+                    $"unknown kind '{kind}'. Known: {string.Join(", ", KindToPathPrefix.Keys)}", nameof(kind));
+        }
+
+        var hits = new List<RankedHit>(cache.Count);
+        foreach (var entry in cache.Values)
+        {
+            if (prefix is not null && !entry.Path.StartsWith(prefix, StringComparison.Ordinal))
+                continue;
+            hits.Add(new RankedHit(entry, Dot(queryVector, entry.Vector)));
+        }
+        hits.Sort((a, b) => b.Similarity.CompareTo(a.Similarity));
+        return hits.Count <= k ? hits : hits.GetRange(0, k);
+    }
+
+    static float Dot(float[] a, float[] b)
+    {
+        // a.Length == b.Length checked by caller via dim validation.
+        float sum = 0f;
+        for (int i = 0; i < a.Length; i++) sum += a[i] * b[i];
+        return sum;
     }
 
     // ── content addressing ───────────────────────────────────────
