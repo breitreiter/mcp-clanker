@@ -1,11 +1,11 @@
 ---
 kind: plan
 title: Embeddings primitive + tidy phase 2 (locate-existing-entry)
-state: exploring
+state: active
 created: 2026-05-11
 updated: 2026-05-11
 touches:
-  files: [Substrate/Tidy.cs, Infrastructure/Providers.cs, Prompts/tidy-triage.md, Prompts/tidy-draft.md]
+  files: [Substrate/Tidy.cs, Infrastructure/Embeddings.cs, Prompts/tidy-triage.md, Prompts/tidy-draft.md]
   features: [substrate, tidy, embeddings]
 provenance:
   author: human

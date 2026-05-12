@@ -64,6 +64,7 @@ public class Program
             "template" => RunTemplate(args[1..]),
             "ping" => await RunPing(args[1..]),
             "ping-tools" => await RunPingTools(args[1..]),
+            "ping-embeddings" => await RunPingEmbeddings(args[1..]),
             "render-transcript" => RunRenderTranscript(args[1..]),
             "help" or "--help" or "-h" => PrintUsageAndExit(0),
             _ => UnknownCommand(args[0]),
@@ -147,6 +148,9 @@ Inspection:
 Diagnostics:
   ping [provider]                    Smoke-test a chat provider.
   ping-tools [provider]              Verify multi-turn tool-calling round-trips.
+  ping-embeddings [text...]          Smoke-test the embedding provider — embed a short
+                                     string (default: "hello world") and report dim,
+                                     norm, and a few sample components.
   render-transcript <trace-jsonl>    Re-render transcript.md from an existing trace.jsonl.
 
 Operates on the current working directory. cwd must be a git repo for
@@ -689,6 +693,34 @@ build / validate / list / show / log / review.
         DescribeResponse("r2", r2);
 
         Console.WriteLine(r2.Text);
+        return 0;
+    }
+
+    // Smoke-test the embedding provider. Embeds a short string against
+    // imp:8081 (or wherever EmbeddingProvider:Endpoint points) and reports
+    // dimension + norm + a few sample components, enough to confirm the
+    // round-trip works and the vector looks healthy. Fail-closed per
+    // rules/embedding-provider.md — no fallback on connection failure.
+    static async Task<int> RunPingEmbeddings(string[] args)
+    {
+        var input = args.Length > 0 ? string.Join(" ", args) : "hello world";
+        var config = BuildConfiguration();
+
+        var endpoint = config["EmbeddingProvider:Endpoint"] ?? "<unset>";
+        var model = config["EmbeddingProvider:Model"] ?? "<unset>";
+        Console.Error.WriteLine($"[ping-embeddings] endpoint={endpoint} model={model}");
+        Console.Error.WriteLine($"[ping-embeddings] input=\"{input}\"");
+
+        var client = Embeddings.Create(config);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var vector = await Embeddings.EmbedAsync(client, input);
+        sw.Stop();
+
+        var norm = Math.Sqrt(vector.Sum(x => (double)x * x));
+        Console.Error.WriteLine($"[ping-embeddings] dim={vector.Length} norm={norm:F4} elapsed={sw.ElapsedMilliseconds}ms");
+        Console.Error.WriteLine($"[ping-embeddings] first 5: [{string.Join(", ", vector.Take(5).Select(x => x.ToString("F4")))}]");
+        Console.Error.WriteLine($"[ping-embeddings] last 5:  [{string.Join(", ", vector.TakeLast(5).Select(x => x.ToString("F4")))}]");
+        Console.WriteLine($"ok dim={vector.Length}");
         return 0;
     }
 
