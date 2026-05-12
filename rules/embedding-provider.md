@@ -41,3 +41,11 @@ constraint is cache integrity.
   partial-mixed caches are forbidden. The dimension change alone
   would corrupt the jsonl format, but a same-dim swap (e.g.
   Qwen3 4B → 8B if both happen to match) wouldn't — hence this rule.
+
+**Anticipated future relaxation (not yet supported).** A pluggable
+provider story is on the roadmap for the case where imp:8081 is
+unreachable (working off the home LAN, external contributors, etc.).
+When that lands, this rule moves from "project-wide invariant" to
+"per-deployment configuration" and the cache (already gitignored at
+`.imp/embeddings.jsonl` in anticipation) becomes per-user. Until
+that work ships, this rule stands as written.
