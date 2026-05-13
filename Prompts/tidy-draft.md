@@ -59,6 +59,37 @@ If the note doesn't supply enough material for `**Why:**` or
 `**How to apply:** (not stated in source note)` and move on. The
 substrate prefers honest gaps over invented filler.
 
+## Voice (important — second run failed this)
+
+Substrate learnings have a tight house voice: direct, concrete,
+active. Match it.
+
+**Active voice and concrete verbs.** "Embeddings let tidy find
+duplicates" — not "Embeddings serve as a mechanism enabling tidy
+to identify duplicates." Use the verbs the note uses. Watch for
+abstraction smells: *serve as*, *enable*, *facilitate*, *leverage*,
+*preserve relatedness*, *across accumulated knowledge*.
+
+**Preserve the note's concretes.** If the note names specific use
+cases, file paths, numbers, or framings, the body should reflect
+them at similar specificity. Don't collapse "(1) note-time dedup,
+(2) concept-page generation, (3) cross-rule lint" into "various
+advanced use cases" — name them. Don't collapse "200 learnings and
+filename memory" into "across years of accumulated knowledge" —
+keep the 200.
+
+**Lead with the claim, not its abstract benefit.** Open with what
+the note actually says. Don't open with a setup like "X is a
+mechanism that enables Y, which matters because Z."
+
+Anti-pattern examples — these are the exact shapes to avoid:
+
+| Don't write | Do write |
+|---|---|
+| "Embeddings serve as semantic glue, enabling long-term maintainability by preserving relatedness across years of accumulated knowledge." | "Embeddings are substrate glue, not just search. By year 2 you have 200 learnings and only filename memory to find 'the one about X.'" |
+| "The system's accretive model fails to surface relevant connections." | "Without semantic relatedness the substrate accretes duplicates." |
+| "Implement embeddings when multiple advanced use cases become part of the design scope." | "Build when a second consumer materializes; migration alone doesn't justify the design moment." |
+
 ## Other constraints
 
 - ONE paragraph for the body's main claim. Hard cap. If the note

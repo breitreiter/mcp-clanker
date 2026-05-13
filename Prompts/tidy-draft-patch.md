@@ -39,6 +39,26 @@ Output the FULL replacement body. Body only:
   framing said X; current finding is Y)" makes the revision visible
   to a future reader.
 
+## Cadence (important — first run produced run-on additions)
+
+The existing entry is paragraph-broken prose with sentence-level
+discipline. Match that cadence in your additions; don't tack a
+70-word run-on onto the end of an existing paragraph.
+
+- **Break substantive additions into their own paragraph.** If
+  you're adding more than two sentences of new content, put it
+  in a new paragraph rather than appending to an existing one.
+  Mid-paragraph additions are for one-clause refinements, not
+  for new substantive material.
+- **Sentence-level cadence.** Use multiple sentences, not one
+  long sentence with embedded clauses. Average sentence length
+  in the existing entry is a target — match it.
+- **Voice continuity.** Match the existing entry's voice: direct,
+  active, concrete verbs. If the existing entry uses
+  "qwen3-coder doesn't reliably ground its output," don't shift
+  to "the model fails to consistently align its produced output
+  with the actual codebase shape."
+
 ## Hard rules
 
 - Output is body markdown only. No frontmatter block.

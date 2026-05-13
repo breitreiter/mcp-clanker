@@ -249,7 +249,13 @@ public static class Tidy
             new(ChatRole.System, systemPrompt),
             new(ChatRole.User, user),
         };
-        var options = new ChatOptions { MaxOutputTokens = 600 };
+        // Temperature 0: triage is a categorical decision (classification
+        // bucket + title). Default temperature wobble at this stage
+        // propagates downstream — small title-text variance changes the
+        // embedding query in the locate step, which changes the
+        // similarity score, which can change the create/update decision
+        // on borderline cases. Pin it here too.
+        var options = new ChatOptions { MaxOutputTokens = 600, Temperature = 0f };
 
         var resp = await chat.GetResponseAsync(messages, options);
         var text = resp.Text?.Trim();
