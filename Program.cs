@@ -96,8 +96,12 @@ Lifecycle:
                                      Emits proof-of-work JSON to stdout.
   research --mode=<m> "question"     Cheap-executor research run. --mode=fs reads the
     [--brief path]                   current checkout; --brief points at a structured
-    [provider]                       brief markdown file. Emits report JSON to stdout
-                                     and a sidecar archive to <repo>.researches/.
+    [--archive]                      brief markdown file. Emits report JSON to stdout.
+    [provider]                       --archive keeps the trace + transcript at
+                                     <repo>.researches/R-NNN-<slug>/ for debugging;
+                                     by default the archive is deleted on successful
+                                     completion (kept on exception). Crashed runs
+                                     always leave the archive behind for inspection.
   wiki [path] [--dry-run]            DEPRECATED, pending removal. Superseded by the
     [--full] [--resume W-NNN]        substrate (`imp/`, via `imp tidy`). Still works;
                                      prints a stderr warning on use. See
@@ -232,6 +236,7 @@ build / validate / list / show / log / review.
         string? mode = null;
         string? briefPath = null;
         string? question = null;
+        bool keepArchive = false;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -244,6 +249,8 @@ build / validate / list / show / log / review.
                 briefPath = a["--brief=".Length..];
             else if (a == "--brief" && i + 1 < args.Length)
                 briefPath = args[++i];
+            else if (a is "--archive" or "-a")
+                keepArchive = true;
             else if (question is null)
                 question = a;
             else
@@ -267,7 +274,7 @@ build / validate / list / show / log / review.
         var chat = Providers.Create(config);
 
         Console.Error.WriteLine($"[imp] research start: mode={mode} brief={briefPath ?? "<free-text>"} provider={config["ActiveProvider"]} cwd={Directory.GetCurrentDirectory()}");
-        var json = await ResearchRunner.RunAsync(chat, config, mode, question, briefPath);
+        var json = await ResearchRunner.RunAsync(chat, config, mode, question, briefPath, keepArchive);
         Console.WriteLine(json);
         return 0;
     }

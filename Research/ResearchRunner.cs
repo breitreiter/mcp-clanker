@@ -26,9 +26,9 @@ public record ResearchResult(
     [property: JsonPropertyName("terminal_state")] TerminalState TerminalState,
     [property: JsonPropertyName("report")] ResearchReport? Report,
     [property: JsonPropertyName("blocked_reason")] BlockedQuestion? BlockedReason,
-    [property: JsonPropertyName("archive_dir")] string ArchiveDir,
-    [property: JsonPropertyName("trace_path")] string TracePath,
-    [property: JsonPropertyName("transcript_path")] string TranscriptPath);
+    [property: JsonPropertyName("archive_dir")] string? ArchiveDir,
+    [property: JsonPropertyName("trace_path")] string? TracePath,
+    [property: JsonPropertyName("transcript_path")] string? TranscriptPath);
 
 public static class ResearchRunner
 {
@@ -40,7 +40,8 @@ public static class ResearchRunner
         IConfiguration config,
         string modeName,
         string? freeTextQuestion,
-        string? briefPath)
+        string? briefPath,
+        bool keepArchive = false)
     {
         ImpLog.Info($"research: start mode={modeName} brief={briefPath ?? "<free-text>"} cwd={Directory.GetCurrentDirectory()}");
 
@@ -60,7 +61,7 @@ public static class ResearchRunner
             return SerializeError(modeName, "brief-parse", ex.Message);
         }
 
-        return await RunAsync(chat, config, modeName, descriptor, repoRoot);
+        return await RunAsync(chat, config, modeName, descriptor, repoRoot, keepArchive: keepArchive);
     }
 
     // In-memory entry: caller has already constructed a descriptor and
@@ -76,7 +77,8 @@ public static class ResearchRunner
         string modeName,
         TaskDescriptor descriptor,
         string repoRoot,
-        int? toolBudgetOverride = null)
+        int? toolBudgetOverride = null,
+        bool keepArchive = true)
     {
         ModeDefinition mode;
         try
@@ -124,6 +126,20 @@ public static class ResearchRunner
 
         ResearchArchive.WriteMeta(archiveDir, descriptor, mode.Name, providerName, modelName, outcome.Report, outcome.Terminal);
 
+        // Default is to delete the archive on successful completion — research
+        // is one-shot by shape, and accumulated sidecars discourage casual use.
+        // Wiki dispatch passes keepArchive: true (it reads the archive later).
+        // On exception we leave the archive in place so failures stay
+        // debuggable; the delete only fires on the success path here.
+        if (!keepArchive)
+        {
+            try { Directory.Delete(archiveDir, recursive: true); }
+            catch (Exception ex)
+            {
+                ImpLog.Warn($"research: failed to clean up archive {archiveDir}: {ex.Message}");
+            }
+        }
+
         var result = new ResearchResult(
             ResearchId: descriptor.ResearchId,
             Mode: mode.Name,
@@ -131,9 +147,9 @@ public static class ResearchRunner
             TerminalState: outcome.Terminal,
             Report: outcome.Report,
             BlockedReason: outcome.BlockedReason,
-            ArchiveDir: archiveDir,
-            TracePath: Path.Combine(archiveDir, "trace.jsonl"),
-            TranscriptPath: Path.Combine(archiveDir, "transcript.md"));
+            ArchiveDir: keepArchive ? archiveDir : null,
+            TracePath: keepArchive ? Path.Combine(archiveDir, "trace.jsonl") : null,
+            TranscriptPath: keepArchive ? Path.Combine(archiveDir, "transcript.md") : null);
 
         return JsonSerializer.Serialize(result, ResultOptions);
     }
