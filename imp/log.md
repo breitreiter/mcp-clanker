@@ -139,3 +139,7 @@ plans/project-migrate-phase{1,2}.md + skills/project-migrate.md);
 project/wiki-plan.md (superseded by plans/wiki-deprecation.md).
 
 Cleanup + audit: P-2026-05-10-020.
+
+## [2026-05-13] tidy | 3 note(s): 1 new entry(s), 1 updated, 1 proposal(s), 0 discarded, 0 failed
+
+Processed inbox: 1 learning(s), 0 reference(s), 1 proposal(s), 0 discarded, 0 failed.
