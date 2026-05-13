@@ -26,6 +26,16 @@ public static class Locate
     // reasons.
     public const int CandidatePreviewChars = 600;
 
+    // Below this cosine similarity, an `update` decision is mechanically
+    // downgraded to `create` even if the LLM picked update. Guardrail
+    // against the model confidently choosing to merge into a weakly-
+    // matched candidate. The 0.65 threshold is below all observed
+    // correct-create scores (0.63 / 0.67 in early dogfood), so it
+    // primarily catches pathological cases. Revisit with more data —
+    // see feedback_semantic_thresholds_opaque memory for why this
+    // calibration is necessarily rough.
+    public const float UpdateSimilarityFloor = 0.65f;
+
     public sealed record Result(
         [property: JsonPropertyName("decision")] string Decision,
         [property: JsonPropertyName("target_path")] string? TargetPath,
@@ -69,7 +79,16 @@ public static class Locate
             new(ChatRole.System, locateSystemPrompt),
             new(ChatRole.User, user),
         };
-        var resp = await chat.GetResponseAsync(messages, new ChatOptions { MaxOutputTokens = 400 });
+        // Temperature 0: locate is a categorical decision (create vs
+        // update-which), not creative writing. We saw run-to-run wobble
+        // on borderline cases at default temperature — same input,
+        // different decisions. Greedy sampling eliminates that on
+        // providers that respect the setting (vllm, llama.cpp, OpenAI).
+        var resp = await chat.GetResponseAsync(messages, new ChatOptions
+        {
+            MaxOutputTokens = 400,
+            Temperature = 0f,
+        });
         var text = resp.Text?.Trim() ?? "";
 
         var json = ExtractJsonObject(text);
@@ -127,6 +146,22 @@ public static class Locate
                     Decision: "create",
                     TargetPath: null,
                     Rationale: $"locate picked update but target_path '{parsed.TargetPath}' wasn't a candidate; defaulting to create",
+                    Candidates: candidates);
+            }
+
+            // 6. Similarity floor: if the chosen candidate is below the
+            // floor, downgrade to create. Guardrail against confidently
+            // wrong merges into weakly-matched candidates.
+            var hit = candidates.First(c => string.Equals(c.Entry.Path, parsed.TargetPath, StringComparison.Ordinal));
+            if (hit.Similarity < UpdateSimilarityFloor)
+            {
+                ImpLog.Warn(
+                    $"Locate: update target '{parsed.TargetPath}' at sim={hit.Similarity:F4} " +
+                    $"below floor {UpdateSimilarityFloor:F2}; downgrading to create");
+                return new Result(
+                    Decision: "create",
+                    TargetPath: null,
+                    Rationale: $"locate picked update at sim={hit.Similarity:F4}, below {UpdateSimilarityFloor:F2} floor; downgraded to create",
                     Candidates: candidates);
             }
         }

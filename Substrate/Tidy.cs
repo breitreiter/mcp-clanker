@@ -63,9 +63,10 @@ public static class Tidy
 
         var triagePromptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "tidy-triage.md");
         var draftPromptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "tidy-draft.md");
+        var draftPatchPromptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "tidy-draft-patch.md");
         var proposalPromptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "tidy-proposal.md");
         var locatePromptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "tidy-locate.md");
-        if (!File.Exists(triagePromptPath) || !File.Exists(draftPromptPath)
+        if (!File.Exists(triagePromptPath) || !File.Exists(draftPromptPath) || !File.Exists(draftPatchPromptPath)
             || !File.Exists(proposalPromptPath) || !File.Exists(locatePromptPath))
         {
             Console.Error.WriteLine($"imp tidy: prompt files not found at {Path.GetDirectoryName(triagePromptPath)}");
@@ -73,6 +74,7 @@ public static class Tidy
         }
         var triageSystemPrompt = await File.ReadAllTextAsync(triagePromptPath);
         var draftSystemPrompt = await File.ReadAllTextAsync(draftPromptPath);
+        var patchSystemPrompt = await File.ReadAllTextAsync(draftPatchPromptPath);
         var proposalSystemPrompt = await File.ReadAllTextAsync(proposalPromptPath);
         var locateSystemPrompt = await File.ReadAllTextAsync(locatePromptPath);
 
@@ -142,7 +144,8 @@ public static class Tidy
                     case "learning":
                     case "reference":
                         await HandleEntryAsync(
-                            chat, embed, draftSystemPrompt, locateSystemPrompt,
+                            chat, embed,
+                            draftSystemPrompt, patchSystemPrompt, locateSystemPrompt,
                             repoRoot, substrateDir, notePath, noteName,
                             body, frontmatter, triage, dryRun, stats);
                         break;
@@ -347,22 +350,184 @@ public static class Tidy
         return sb.ToString();
     }
 
+    // ── phase 4b: patch draft (update existing entry) ────────────
+
+    // Patches an existing entry in place: reads it, calls the patch
+    // prompt with its body + the note + triage, writes the result back
+    // with frontmatter preserved (only `updated:` bumped). Returns true
+    // if the update succeeded, false if anything went wrong and the
+    // caller should fall back to create.
+    static async Task<bool> ApplyPatchAsync(
+        IChatClient chat, string patchPrompt,
+        string repoRoot, string targetRelPath,
+        string notePath, string noteName,
+        string noteBody, IReadOnlyDictionary<string, string> noteFrontmatter,
+        TriageResult triage, bool dryRun, RunStats stats)
+    {
+        var absPath = Path.Combine(repoRoot, targetRelPath);
+        string existingContent;
+        try { existingContent = await File.ReadAllTextAsync(absPath); }
+        catch (IOException ex)
+        {
+            ImpLog.Warn($"tidy.patch: read failed for {targetRelPath}: {ex.Message}");
+            Console.WriteLine($"      patch: read failed; falling back to create");
+            return false;
+        }
+
+        var (fmBlock, existingBody) = SplitFrontmatter(existingContent);
+        if (fmBlock is null)
+        {
+            // No frontmatter — refuse to patch. The orchestrator owns
+            // frontmatter; a body-only file shouldn't be in the substrate.
+            Console.WriteLine($"      patch: {targetRelPath} has no frontmatter; falling back to create");
+            return false;
+        }
+
+        var patchedBody = await PatchBodyAsync(
+            chat, patchPrompt, existingBody, noteBody, noteFrontmatter, triage);
+        if (string.IsNullOrWhiteSpace(patchedBody))
+        {
+            Console.WriteLine($"      patch: model returned empty body; falling back to create");
+            return false;
+        }
+        // Defensive: strip any frontmatter the model emitted despite the
+        // prompt instruction not to.
+        patchedBody = StripLeadingFrontmatter(patchedBody).TrimStart('\r', '\n');
+
+        var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+        var bumpedFm = BumpUpdatedField(fmBlock, today);
+        var newContent = $"---\n{bumpedFm}\n---\n\n{patchedBody}";
+        if (!newContent.EndsWith('\n')) newContent += "\n";
+
+        Console.WriteLine($"      patch → {targetRelPath}");
+        if (dryRun) { stats.Updated++; return true; }
+
+        await File.WriteAllTextAsync(absPath, newContent);
+        MoveTo(notePath, Path.Combine(repoRoot, ResolveSubstrateRel(repoRoot), "note", "processed"));
+        stats.Updated++;
+        return true;
+    }
+
+    static async Task<string?> PatchBodyAsync(
+        IChatClient chat, string systemPrompt,
+        string existingBody, string noteBody,
+        IReadOnlyDictionary<string, string> noteFrontmatter,
+        TriageResult triage)
+    {
+        var user = BuildPatchUserMessage(existingBody, noteBody, noteFrontmatter, triage);
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.System, systemPrompt),
+            new(ChatRole.User, user),
+        };
+        var resp = await chat.GetResponseAsync(messages, new ChatOptions { MaxOutputTokens = 2000 });
+        var text = resp.Text?.Trim();
+        return string.IsNullOrEmpty(text) ? null : text;
+    }
+
+    static string BuildPatchUserMessage(
+        string existingBody, string noteBody,
+        IReadOnlyDictionary<string, string> noteFrontmatter,
+        TriageResult triage)
+    {
+        var sb = new StringBuilder();
+        sb.Append("## Existing entry body\n\n");
+        sb.Append(existingBody.Trim());
+        sb.Append("\n\n## Inbox note (the new content to incorporate)\n\n");
+        sb.Append($"triage classification: {triage.Classification}\n");
+        sb.Append($"triage title: {triage.Title}\n");
+        sb.Append($"triage rationale: {triage.Rationale}\n\n");
+        sb.Append("note body:\n");
+        sb.Append(noteBody.Trim());
+        sb.Append("\n\nProduce the revised body markdown. Body only — no frontmatter, no surrounding prose.");
+        return sb.ToString();
+    }
+
+    // Splits a file into its raw frontmatter block (text between the
+    // opening and closing `---`) and the body after it. Returns
+    // (null, content) if no frontmatter is detected.
+    //
+    // Unlike ParseNote, this preserves the frontmatter as raw text so
+    // we can edit it surgically (e.g. bump `updated:`) without
+    // re-serializing through a flat key/value model that would lose
+    // nested YAML structure.
+    static (string? FrontmatterBlock, string Body) SplitFrontmatter(string content)
+    {
+        if (!content.StartsWith("---\n", StringComparison.Ordinal)
+            && !content.StartsWith("---\r\n", StringComparison.Ordinal))
+            return (null, content);
+
+        var afterOpen = content.IndexOf('\n') + 1;
+        var endIdx = content.IndexOf("\n---", afterOpen, StringComparison.Ordinal);
+        if (endIdx < 0) return (null, content);
+
+        var fmBlock = content[afterOpen..endIdx];
+        var bodyStart = endIdx + "\n---".Length;
+        if (bodyStart < content.Length && content[bodyStart] == '\r') bodyStart++;
+        if (bodyStart < content.Length && content[bodyStart] == '\n') bodyStart++;
+        if (bodyStart < content.Length && content[bodyStart] == '\r') bodyStart++;
+        if (bodyStart < content.Length && content[bodyStart] == '\n') bodyStart++;
+        return (fmBlock, content[bodyStart..]);
+    }
+
+    // Sets the `updated:` field in a raw frontmatter block to `today`.
+    // Operates on lines; matches a top-level (column-0) `updated:` field
+    // and ignores any nested `updated:` keys at deeper indentation.
+    // Inserts the field after `created:` if missing entirely.
+    static string BumpUpdatedField(string fmBlock, string today)
+    {
+        var lines = fmBlock.Split('\n');
+        for (int i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i];
+            var rstripped = line.TrimEnd('\r');
+            if (rstripped.StartsWith("updated:", StringComparison.Ordinal))
+            {
+                lines[i] = $"updated: {today}";
+                return string.Join("\n", lines);
+            }
+        }
+        // Field missing — insert after `created:` if present, else at the end.
+        var output = new List<string>(lines.Length + 1);
+        bool inserted = false;
+        foreach (var line in lines)
+        {
+            output.Add(line);
+            if (!inserted && line.TrimEnd('\r').StartsWith("created:", StringComparison.Ordinal))
+            {
+                output.Add($"updated: {today}");
+                inserted = true;
+            }
+        }
+        if (!inserted) output.Add($"updated: {today}");
+        return string.Join("\n", output);
+    }
+
+    // Returns "imp" or "project" depending on which substrate is in use.
+    // Tidy already calls FindSubstrateDir during RunAsync; this helper
+    // re-derives the relative name for places we need to compute paths
+    // off the substrate root without threading the dir param everywhere.
+    static string ResolveSubstrateRel(string repoRoot)
+    {
+        var imp = Path.Combine(repoRoot, "imp", "_meta", "conventions.md");
+        if (File.Exists(imp)) return "imp";
+        return "project";
+    }
+
     // ── phase 6: apply ────────────────────────────────────────────
 
     static async Task HandleEntryAsync(
         IChatClient chat, EmbeddingClient embed,
-        string draftPrompt, string locatePrompt,
+        string draftPrompt, string patchPrompt, string locatePrompt,
         string repoRoot, string substrateDir, string notePath, string noteName,
         string body, IReadOnlyDictionary<string, string> frontmatter,
         TriageResult triage, bool dryRun, RunStats stats)
     {
-        // Phase 2: locate. Decide create-new vs update-which. For this
-        // iteration the update path isn't wired yet — when locate says
-        // update we log the intent and fall through to create. Once the
-        // patch-draft prompt lands this branch routes to it.
+        // Phase 2: locate. Decide create-new vs update-which.
+        Locate.Result? located = null;
         try
         {
-            var located = await Locate.LocateAsync(
+            located = await Locate.LocateAsync(
                 chat, embed, repoRoot,
                 triage.Classification, triage.Title, body, locatePrompt);
             Console.WriteLine($"      locate: {located.Decision}" +
@@ -373,17 +538,28 @@ public static class Tidy
                 var top = located.Candidates[0];
                 Console.WriteLine($"        top candidate: {top.Entry.Path} (sim={top.Similarity:F4})");
             }
-            if (string.Equals(located.Decision, "update", StringComparison.OrdinalIgnoreCase))
-            {
-                Console.WriteLine($"      note: update path not yet wired — proceeding with create");
-            }
         }
         catch (Exception ex)
         {
-            // Locate is observational for this iteration; if it fails we
-            // still want the rest of tidy to make progress.
+            // Locate failure → fall through to create. Better to make
+            // progress with a duplicate-able entry than to leave the note
+            // unprocessed.
             ImpLog.Warn($"tidy.locate: {ex.GetType().Name}: {ex.Message}");
             Console.WriteLine($"      locate: failed ({ex.GetType().Name}); proceeding with create");
+        }
+
+        // If locate decided update, route to patch.
+        if (located is not null
+            && string.Equals(located.Decision, "update", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrEmpty(located.TargetPath))
+        {
+            var updated = await ApplyPatchAsync(
+                chat, patchPrompt,
+                repoRoot, located.TargetPath,
+                notePath, noteName,
+                body, frontmatter, triage, dryRun, stats);
+            if (updated) return;
+            // ApplyPatchAsync logged the reason; fall through to create.
         }
 
         var bodyMarkdown = await DraftBodyAsync(chat, draftPrompt, body, frontmatter, triage);
@@ -770,16 +946,17 @@ public static class Tidy
     {
         public int Learnings;
         public int References;
+        public int Updated;          // existing entries patched via locate→update
         public int Proposed;
         public int Drafted;          // dry-run only
         public int Discarded;
         public int Failed;
 
-        public int Total => Learnings + References + Proposed + Drafted + Discarded + Failed;
-        public bool AnyChanges => Learnings > 0 || References > 0 || Proposed > 0 || Discarded > 0;
+        public int Total => Learnings + References + Updated + Proposed + Drafted + Discarded + Failed;
+        public bool AnyChanges => Learnings > 0 || References > 0 || Updated > 0 || Proposed > 0 || Discarded > 0;
 
         public string Summary() =>
-            $"{Total} note(s): {Learnings + References + Drafted} entry(s), {Proposed} proposal(s), {Discarded} discarded, {Failed} failed";
+            $"{Total} note(s): {Learnings + References + Drafted} new entry(s), {Updated} updated, {Proposed} proposal(s), {Discarded} discarded, {Failed} failed";
     }
 
     // ── usage ─────────────────────────────────────────────────────
